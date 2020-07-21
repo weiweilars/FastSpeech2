@@ -1,0 +1,69 @@
+{
+    "data":
+    {
+	"num_mel": 80,
+	"num_freq": 1025,  
+	"sample_rate": 22050,
+	"frame_size_ms": 50,
+	"frame_hop_ms": 12.5,
+	"preemphasis": 0.97,
+	"min_level_db": -100,
+	"power": 1.5,
+	"gl_iter":100,
+	"num_output_per_step":1
+    },
+    "train":
+    {
+	"batch_size":10,
+	"epochs":200,
+	"loss_punish":1,
+	"lr":0.05,
+	"warmup_step":4000,
+	"grad_clip_thresh":1.0
+    },
+    "encoderPrenet":
+    {
+	"emb_dim": 512,
+	"hid_dim":512,
+	"kernel_size":5,
+	"num_conv": 3,
+	"dropout":0.5,
+	"pos_dropout":0.1,
+	"num_pos":1000
+    },
+    "decoderPrenet":
+    {
+	"mel_dim":80,
+	"hid_dim":256,
+	"out_dim":512,
+	"dropout":0.1,
+	"pos_dropout":0.1,
+	"num_pos":10000
+    },
+    "encoder":
+    {
+	"num_layers":6,
+	"hid_dim":512,
+	"pf_dim":1024,
+	"num_heads":4,
+	"dropout":0.2
+    },
+    "decoder":
+    {
+	"num_layers":6,
+	"hid_dim":512,
+	"pf_dim":1024,
+	"num_heads":4,
+	"dropout":0.2,
+	"num_mel":80
+    },
+    "postnet":
+    {
+	"num_mel":80,
+	"hid_dim":256,
+	"kernel_size":5,
+	"num_conv":5,
+	"dropout":0.5
+    }
+}
+

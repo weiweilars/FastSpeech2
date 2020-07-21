@@ -1,0 +1,8 @@
+LibriSpeech
+*~
+**/__pycache__/
+/data
+/models
+**#
+/ctc*
+test.py

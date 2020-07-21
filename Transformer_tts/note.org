@@ -1,0 +1,35 @@
+* Output from torchaudio.dataset.LJSPEECH
+- output: waveform, sample_rate, transcript, normalized_transcript
+- example output: 
+#+BEGIN_SRC 
+[tensor([[[ 6.1035e-05,  0.0000e+00,  3.0518e-04,  ..., -1.5564e-03,-2.5940e-03, -3.2349e-03]]]), 
+tensor([22050]),
+['but in opposition to the recorded denunciations of authority, and in defiance of the express enactments of the law,'], 
+['but in opposition to the recorded denunciations of authority, and in defiance of the express enactments of the law,']]
+#+END_SRC
+- the shape of waveform 
+torch.Size([1, 1, 153245])
+
+* audio preprocessing 
+- sample rate : 16000 (resample)
+- frame size : 50ms  -- n_fft = 16000*0.05 = 800
+- frame hop : 12.5ms -- hop_length = 16000*0.0125 = 200
+- Hann window -- window_fn = torch.hann_window (default)
+- 80 channel mel filterbank -- n_mels = 80
+- spanning 125HZ to 7.6kHz 
+- clipped to minimum value of 0.01 
+- log dynamic range compression 
+
+* Text preprogressing 
+- letter
+
+* Dataset and Dataloader 
+- can modified for different data 
+* model 
+
+* Modification 
+** 2020-07-18
+*** change the Postnet to residual cnn network 
+*** change the transformer layer to 3
+*** change the batch size to 32
+
