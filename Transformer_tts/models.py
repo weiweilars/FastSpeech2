@@ -153,12 +153,13 @@ class Decoder(nn.Module):
             tgt_aligns.append(tgt_align.unsqueeze(1))
             tgt_src_aligns.append(tgt_src_align.unsqueeze(1))
 
+        
         tgt_aligns = torch.cat(tgt_aligns, 1)
         tgt_src_aligns = torch.cat(tgt_src_aligns, 1)
 
         tgt = tgt.transpose(0,1)
 
-        stop_tokens = self.stop_linear(tgt)
+        stop_tokens = self.stop_linear(tgt).squeeze(-1)
         mel_out = self.mel_linear(tgt)
         
         return mel_out, stop_tokens, tgt_aligns, tgt_src_aligns
@@ -239,12 +240,18 @@ class Model(nn.Module):
         self.encoder = Encoder(encoder_params)
         self.decoder = Decoder(decoder_params)
         self.postnet = Postnet(postnet_params)
-        self.loss = TSSLoss(params)
+        self.loss_fn = TSSLoss(params)
 
 
     def make_key_mask(self, pos):
+
+        cuda_check = pos.is_cuda
+        if cuda_check:
+            device = 'cuda'
+        else:
+            device = 'cpu'
         max_len = torch.max(pos).item()
-        ids = pos.new_tensor(torch.arange(0, max_len))
+        ids = (torch.arange(0, max_len)).to(device)
         mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
@@ -255,8 +262,7 @@ class Model(nn.Module):
         diag_mask[diag_mask == 1] = 0
         return diag_mask
 
-        
-    def forward(self, mel, seq, mel_len, seq_len):
+    def output(self, mel, seq, mel_len, seq_len):
 
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
@@ -280,48 +286,75 @@ class Model(nn.Module):
 
         mel_out = self.postnet(mel_linear)
 
-        return mel
+        return mel_linear, mel_out, stop_tokens, mel_seq_align, mel_key_mask
+        
+    def forward(self, mel, seq, mel_len, seq_len, gate):
+
+        mel_linear, mel_out, stop_tokens, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+
+        mel_linear_loss, mel_post_loss, gate_loss, guide_loss = self.loss_fn((mel_linear, mel_out, stop_tokens),
+                                                                             (mel, gate, mel_key_mask, mel_len, seq_len),
+                                                                             mel_seq_align)
+
+
+        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
+
+    def inference(self, text, max_len=1024):
+        pass
 
 
 class TSSLoss(nn.Module):
     def __init__(self, params):
         super(TSSLoss, self).__init__()
-
-        self.num_output_per_step = params['data']['num_output_per_step']
-        self.p = params['train']['loss_punish']
-        self.num_mel = params['data']['num_mel']
-
-    def forward(self, output, input):
-        mask = output[3]
-        seq_mask = mask.squeeze(1)
-        mel_mask = mask.repeat(1,self.num_mel,1).transpose(1,2)
-        mel_target = input[0][:,self.num_output_per_step:,:]
-        mel_target = mel_target.masked_select(mel_mask[:,self.num_output_per_step:,:])
-
-        mel_output = output[0][:,:-self.num_output_per_step,:]
-        mel_output = mel_output.masked_select(mel_mask[:,self.num_output_per_step:,:])
         
-        mel_post_output = output[1][:,:-self.num_output_per_step,:]
-        mel_post_output = mel_post_output.masked_select(mel_mask[:,self.num_output_per_step:,:])
+    def forward(self, output, input, alignments):
+        mel_linear, mel_post, gate_out = output
+        mel_target, gate_target, mel_mask, mel_len, seq_len = input
+        mel_mask = ~mel_mask
 
-        gate_target = input[2]
-        batch_size = gate_target.shape[0]
-        gate_target = (gate_target.ne(0) & gate_target.lt(gate_target.max(-1, keepdim=True)[0])).float()
-        gate_target = gate_target[:,self.num_output_per_step:]
-        gate_target = gate_target.masked_select(seq_mask[:,self.num_output_per_step:])
+        mel_target = mel_target.transpose(1,2).masked_select(mel_mask.unsqueeze(1))
+        mel_linear = mel_linear.transpose(1,2).masked_select(mel_mask.unsqueeze(1))
+        mel_post = mel_post.transpose(1,2).masked_select(mel_mask.unsqueeze(1))
 
-        gate_out = output[2].view(1,batch_size,-1).squeeze(0)[:,:-self.num_output_per_step]
-        gate_out = gate_out.masked_select(seq_mask[:, self.num_output_per_step:])
+        gate_target = gate_target.masked_select(mel_mask)
+        gate_out = gate_out.masked_select(mel_mask)
 
-        mel_pre_loss = nn.L1Loss()(mel_output, mel_target)
-        mel_post_loss = nn.L1Loss()(mel_post_output, mel_target)
-
-        mel_loss = self.p*(mel_pre_loss + mel_post_loss)
+        mel_linear_loss = nn.L1Loss()(mel_linear, mel_target)
+        mel_post_loss = nn.L1Loss()(mel_post, mel_target)
 
         gate_loss = nn.BCEWithLogitsLoss()(gate_out, gate_target)
-        total_loss = mel_loss + gate_loss
 
-        return total_loss, mel_pre_loss, mel_post_loss, gate_loss 
+        guide_loss = self.guide_loss(alignments, seq_len, mel_len)
+        
+        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
+    
+    def guide_loss(self, alignments, seq_len, mel_len):
+
+        batch, num_layers, T, L = alignments.shape
+
+        cuda_check = alignments.is_cuda
+        if cuda_check:
+            device = 'cuda'
+        else:
+            device = 'cpu'
+
+        W = alignments.new_zeros(batch, T, L)
+        mask = alignments.new_zeros(batch, T, L)
+
+        for i, (t, l) in enumerate(zip(mel_len, seq_len)):
+            mel_seq = (torch.arange(t).to(torch.float32).unsqueeze(-1)/t).to(device)
+            text_seq = (torch.arange(l).to(torch.float32).unsqueeze(0)/t).to(device)
+            x = torch.pow(mel_seq-text_seq, 2)
+            W[i, :t, :l] += (1-torch.exp(-3.125*x)).to(device)
+            mask[i, :t, :l] = 1
+
+        applied_align = alignments[:,-2:]
+
+        losses = applied_align*(W.unsqueeze(1))
+
+        losses = losses.masked_select(mask.unsqueeze(1).to(torch.bool))
+        
+        return torch.mean(losses)
         
         
         

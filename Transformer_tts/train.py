@@ -11,6 +11,8 @@ import torch.nn as nn
 from dataloader_utils import LJSPEECH_MEL, data_mel_processing
 from models import Model, TSSLoss, DecoderPrenet, EncoderPrenet
 from utilities import train, test, save_model
+from save_util import plot_melspec
+import matplotlib.pyplot as plt
 
 import argparse
 
@@ -68,9 +70,16 @@ def main(model_path):
                                   **kwargs)
 
     mel, seq, gate, mel_len, seq_len = next(iter(train_loader))
-    # model = Model(params).to(device)
 
-    # model(mel.to(device), seq.to(device), mel_len.to(device), seq_len.to(device))
+    print(gate)
+
+    model = Model(params).to(device)
+
+    mel_linear, mel_post, stop_tokens, mel_seq_align, _ = model.output(mel.to(device), seq.to(device), mel_len.to(device), seq_len.to(device))
+
+    fig = plot_melspec(mel.detach().cpu(), mel_linear.detach().cpu(), mel_post.detach().cpu(), mel_len.detach().cpu())
+
+    fig.savefig('test.png')
 
     # print(model)
     # print('Num Model Parameters', sum([param.nelement() for param in model.parameters()]))
@@ -106,4 +115,8 @@ def main(model_path):
 
 if __name__ == "__main__":
     model = parser.parse_args()
+    torch.manual_seed(1234)
+    torch.cuda.manual_seed(1234)
     main(model_path = model.model_path)
+
+    

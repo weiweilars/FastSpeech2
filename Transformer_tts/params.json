@@ -19,7 +19,8 @@
 	"loss_punish":1,
 	"lr":0.05,
 	"warmup_step":4000,
-	"grad_clip_thresh":1.0
+	"grad_clip_thresh":1.0,
+	"accumulation":2
     },
     "encoderPrenet":
     {
