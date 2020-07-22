@@ -7,7 +7,7 @@ from text_utils import symbols
 
 import pdb
 
-from layers import Conv1d, Linear, EncoderEmbeddingLayer, PosEmbeddingLayer, EncoderLayer, DecoderLayer
+from layers import Conv1d, Linear, Conv1dBatchNorm, PosEmbeddingLayer, EncoderLayer, DecoderLayer, TransformerEncoderLayer, TransformerDecoderLayer
 
 class EncoderPrenet(nn.Module):
     def __init__(self, params):
@@ -18,54 +18,47 @@ class EncoderPrenet(nn.Module):
         hid_dim = params['hid_dim']
         num_conv = params['num_conv']
         kernel_size = params['kernel_size']
-        device = params['device']
         dropout = params['dropout']
         pos_dropout = params['pos_dropout']
         num_pos = params['num_pos']
         
-        self.embed = EncoderEmbeddingLayer(voc_len, emb_dim, padding_idx=0)
+        self.embed = nn.Embedding(voc_len, emb_dim, padding_idx=0)
 
-        self.first_convolution = nn.Sequential(
-            Conv1d(emb_dim,
-                        hid_dim,
-                        kernel_size=kernel_size,
-                        stride=1,
-                        padding=int((kernel_size-1)/2),
-                        dilation=1,
-                        w_init_gain='linear'),
-            nn.BatchNorm1d(hid_dim),
-        )
-
-        convolution = nn.Sequential(
-            Conv1d(emb_dim,
-                        emb_dim,
-                        kernel_size=kernel_size,
-                        stride=1,
-                        padding=int((kernel_size-1)/2),
-                        dilation=1,
-                        w_init_gain='linear'),
-            nn.BatchNorm1d(hid_dim),
-        )
+        self.first_conv = Conv1dBatchNorm(emb_dim,
+                                         hid_dim,
+                                         kernel_size=kernel_size,
+                                         stride=1,
+                                         padding=int((kernel_size-1)/2),
+                                         dilation=1,
+                                         dropout=dropout)
+        conv = Conv1dBatchNorm(hid_dim,
+                               hid_dim,
+                               kernel_size=kernel_size,
+                               stride=1,
+                               padding=int((kernel_size-1)/2),
+                               dilation=1,
+                               dropout=dropout)
 
         self.convolutions = nn.ModuleList(
-            [convolution for _ in range(num_conv - 1)])
+            [conv for _ in range(num_conv - 1)])
 
         self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
-        self.dropout = dropout
+        self.pos_dropout = nn.Dropout(pos_dropout)
+        
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
 
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, device, padding_idx=0)
 
-
-    def forward(self, x, x_pos):
+    def forward(self, x):
         x = self.embed(x)
         x = x.transpose(1, 2)
-        x = F.dropout(F.relu(self.first_convolution(x)), self.dropout, self.training)
+        x = self.first_conv(x)
         for conv in self.convolutions:
-            x = F.dropout(F.relu(conv(x)), self.dropout, self.training)
+            x = conv(x)
         x = x.transpose(1, 2)
         x = self.projection(x)
         x = self.pos_emb(x)
+        x = self.pos_dropout(x)
         return x
 
 
@@ -78,7 +71,6 @@ class DecoderPrenet(nn.Module):
         out_dim = params['out_dim']
         dropout = params['dropout']
         pos_dropout = params['pos_dropout']
-        device = params['device']
         num_pos = params['num_pos']
 
         self.layers = nn.Sequential(
@@ -86,15 +78,16 @@ class DecoderPrenet(nn.Module):
             Linear(hid_dim, hid_dim, w_init_gain="relu"))
 
         self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
-        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim, device, padding_idx=0)
-
+        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim, padding_idx=0)
         self.dropout = dropout 
+        self.pos_dropout = nn.Dropout(pos_dropout)
         
-    def forward(self, x, x_pos):
+    def forward(self, x):
         for layer in self.layers:
             x = F.dropout(F.relu(layer(x)), self.dropout, self.training)
         x = self.projection(x)
         x = self.pos_emb(x)
+        x = self.pos_dropout(x)
         return x
 
 
@@ -107,19 +100,24 @@ class Encoder(nn.Module):
         n_layers = params['num_layers']
         n_heads = params['num_heads']
         pf_dim = params['pf_dim']
-        device = params['device']
         dropout = params['dropout']
 
-        self.layers = nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
+        self.layers = nn.ModuleList([TransformerEncoderLayer(hid_dim,
+                                                             n_heads,
+                                                             pf_dim,
+                                                             dropout)
                                      for _ in range(n_layers)])
 
-    def forward(self, src, src_mask):
-
+    def forward(self, src, src_key_padding_mask):
+        src_aligns = []
+        ## change to the correct input shape for MultiheadAttention [seq_len, batch, emb_dim]
+        src = src.transpose(0,1)
         for layer in self.layers:
-            src = layer(src, src_mask)
-
-        return src
-
+            src, src_align = layer(src, src_key_padding_mask=src_key_padding_mask)
+            src_aligns.append(src_align.unsqueeze(1))
+        src_aligns = torch.cat(src_aligns, 1)
+        src = src.transpose(0,1)
+        return src, src_aligns 
 
 
 class Decoder(nn.Module):
@@ -130,31 +128,40 @@ class Decoder(nn.Module):
         n_layers = params['num_layers']
         n_heads = params['num_heads']
         pf_dim = params['pf_dim']
-        device = params['device']
         dropout = params['dropout']
         num_mel = params['num_mel']
 
-        self.device = device 
-
-        self.layers = nn.ModuleList([DecoderLayer(hid_dim,
-                                                  n_heads,
-                                                  pf_dim,
-                                                  dropout,
-                                                  device)
+        self.layers = nn.ModuleList([TransformerDecoderLayer(hid_dim,
+                                                             n_heads,
+                                                             pf_dim,
+                                                             dropout)
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
         self.stop_linear = Linear(hid_dim, 1, w_init_gain='sigmoid')
 
-    def forward(self, trg, enc_src, trg_mask, src_mask):
+    def forward(self, tgt, src, tgt_attn_mask, tgt_key_padding_mask, src_key_padding_mask):
+   
+        tgt_aligns, tgt_src_aligns = [], []
 
-        for layer in self.layers:
-            trg, _ = layer(trg, enc_src, trg_mask, src_mask)
-
-        stop_tokens = self.stop_linear(trg)
-        mel_out = self.mel_linear(trg)
+        ## change to the correct input shape for MultiheadAttention [seq_len, batch, emb_dim]
+        tgt = tgt.transpose(0,1)
+        src = src.transpose(0,1)
         
-        return mel_out, stop_tokens
+        for layer in self.layers:
+            tgt, tgt_align, tgt_src_align = layer(tgt, src, tgt_attn_mask=tgt_attn_mask, tgt_key_padding_mask=tgt_key_padding_mask, src_key_padding_mask=src_key_padding_mask)
+            tgt_aligns.append(tgt_align.unsqueeze(1))
+            tgt_src_aligns.append(tgt_src_align.unsqueeze(1))
+
+        tgt_aligns = torch.cat(tgt_aligns, 1)
+        tgt_src_aligns = torch.cat(tgt_src_aligns, 1)
+
+        tgt = tgt.transpose(0,1)
+
+        stop_tokens = self.stop_linear(tgt)
+        mel_out = self.mel_linear(tgt)
+        
+        return mel_out, stop_tokens, tgt_aligns, tgt_src_aligns
 
 class Postnet(nn.Module):
     def __init__(self, params):
@@ -213,21 +220,17 @@ class Postnet(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self,params, device):
+    def __init__(self,params):
         super(Model, self).__init__()
         
         enprenet_params = params['encoderPrenet'].copy()
         enprenet_params['voc_len'] = len(symbols)
-        enprenet_params['device'] = device
 
         encoder_params = params['encoder'].copy()
-        encoder_params['device'] = device
 
         deprenet_params = params['decoderPrenet'].copy()
-        deprenet_params['device'] = device
-
+        
         decoder_params = params['decoder'].copy()
-        decoder_params['device'] = device
 
         postnet_params = params['postnet'].copy()
 
@@ -236,43 +239,48 @@ class Model(nn.Module):
         self.encoder = Encoder(encoder_params)
         self.decoder = Decoder(decoder_params)
         self.postnet = Postnet(postnet_params)
+        self.loss = TSSLoss(params)
 
-        self.device = device
 
-    def make_seq_mask(self, seq_pos):
-        return seq_pos.ne(0).type(torch.float).unsqueeze(1).unsqueeze(2)
+    def make_key_mask(self, pos):
+        max_len = torch.max(pos).item()
+        ids = pos.new_tensor(torch.arange(0, max_len))
+        mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
+        return mask
 
-    def make_mel_mask(self, mel_pos):
+    def make_attn_mask(self, mel):
+        T = mel.size(1)
+        diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
+        diag_mask[diag_mask == 0] = -float('inf')
+        diag_mask[diag_mask == 1] = 0
+        return diag_mask
 
-        batch_size = mel_pos.size(0)
-        mel_len = mel_pos.size(1)
-
-        mel_pad_mask = mel_pos.ne(0).unsqueeze(1)
-
-        mel_sub_mask = torch.tril(torch.ones((mel_len, mel_len), device = self.device)).bool()
-
-        mel_mask = mel_pad_mask.repeat(1, mel_len, 1).bool() & mel_sub_mask
-
-        return mel_mask.unsqueeze(1), mel_pad_mask
-    
         
-    def forward(self, mel, seq, mel_pos, seq_pos):
+    def forward(self, mel, seq, mel_len, seq_len):
 
-        seq_mask = self.make_seq_mask(seq_pos)
+        mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
-        mel_mask, mel_pad_mask = self.make_mel_mask(mel_pos)
+        seq_key_mask = self.make_key_mask(seq_len)
 
-        seq = self.encoder_prenet(seq, seq_pos)
+        mel_key_mask = self.make_key_mask(mel_len)
 
-        seq = self.encoder(seq, seq_mask)
+        mel_attn_mask = self.make_attn_mask(mel)
 
-        mel = self.decoder_prenet(mel, mel_pos)
+        seq = self.encoder_prenet(seq)
 
-        mel_linear, stop_tokens = self.decoder(mel, seq, mel_mask, seq_mask)
+        seq, seq_align = self.encoder(seq, src_key_padding_mask=seq_key_mask)
+
+        mel_input = self.decoder_prenet(mel_input)
+
+        mel_linear, stop_tokens, mel_align, mel_seq_align = self.decoder(mel_input,
+                                                                         seq,
+                                                                         tgt_attn_mask=mel_attn_mask,
+                                                                         tgt_key_padding_mask=mel_key_mask,
+                                                                         src_key_padding_mask=seq_key_mask)
 
         mel_out = self.postnet(mel_linear)
 
-        return mel_linear, mel_out, stop_tokens, mel_pad_mask
+        return mel
 
 
 class TSSLoss(nn.Module):

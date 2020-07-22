@@ -14,7 +14,7 @@
     },
     "train":
     {
-	"batch_size":10,
+	"batch_size":2,
 	"epochs":200,
 	"loss_punish":1,
 	"lr":0.05,

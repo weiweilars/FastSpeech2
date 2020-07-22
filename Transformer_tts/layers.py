@@ -9,33 +9,13 @@ import numpy as np
 from numpy import inf
 
 
-def initialize_weight(x):
-    nn.init.xavier_uniform_(x.weight)
-    if x.bias is not None:
-        nn.init.constant_(x.bias, 0)
-
-
-def pos_table(n_position, hid_dim, padding_idx=None):
-
-    def cal_angle(position, hid_idx):
-        return position / np.power(10000, 2 * (hid_idx // 2) / hid_dim)
-
-    def get_posi_angle_vec(position):
-        return [cal_angle(position, hid_j) for hid_j in range(hid_dim)]
-
-    sinusoid_table = np.array([get_posi_angle_vec(pos_i)
-                               for pos_i in range(n_position)])
-
-    sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])  # dim 2i
-    sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])  # dim 2i+1
-
-    
-    if padding_idx is not None:
-        # zero vector for padding dimension
-        sinusoid_table[padding_idx] = 0.
-
-    return torch.FloatTensor(sinusoid_table)
-
+def _get_activation_fn(activation):
+    if activation == "relu":
+        return F.relu
+    elif activation == "gelu":
+        return F.gelu
+    elif activation == "tanh":
+        return F.tanh
 
 class Linear(nn.Linear):
     def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
@@ -47,66 +27,49 @@ class Conv1d(nn.Conv1d):
         if padding is None:
             assert(kernel_size % 2 == 1)
             padding = int(dilation * (kernel_size - 1) / 2)
-        super(Cov1d, self).__init__(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias)
+        super(Conv1d, self).__init__(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias)
         nn.init.xavier_normal_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
 
+        
+class Conv1dBatchNorm(nn.Module):
+    def __init__(self, in_dim, out_dim, kernel_size, stride, padding, dilation=1, bias=True, activation="relu", dropout=0.1):
+        super(Conv1dBatchNorm,self).__init__()
 
-class EncoderEmbeddingLayer(nn.Module):
-    def __init__(self, num_symbols, emb_dim, padding_idx):
-        super(EncoderEmbeddingLayer, self).__init__()
-        std = sqrt(2.0/(num_symbols + emb_dim))
-        val = sqrt(3.0)*std
-        self.embedding = nn.Embedding(
-            num_symbols, emb_dim, padding_idx=padding_idx)
-        self.embedding.weight.data.uniform_(-val, val)
+        self.conv = Conv1d(in_dim, out_dim, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, w_init_gain=activation)
+        self.bn = nn.BatchNorm1d(out_dim)
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.activation = _get_activation_fn(activation)
 
     def forward(self, x):
-        return self.embedding(x)
-
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.activation(x)
+        out = self.dropout(x)
+        return out 
 
 class PosEmbeddingLayer(nn.Module):
-    def __init__(self, num_pos, hid_dim, device, padding_idx=0):
+    def __init__(self, num_pos, hid_dim, padding_idx=0):
         super(PosEmbeddingLayer, self).__init__()
-        self.register_buffer('pe', self.pos_table(num_pos, hid_dim, padding_idx=padding_idx))
-        
-        self.alpha = nn.Parameter(torch.ones(1)).to(device)
+        self.register_buffer('pe', self._get_pos_matrix(num_pos, hid_dim))
+        self.alpha = nn.Parameter(torch.ones(1))
 
     def forward(self, x):
         x_len = x.shape[1]
-        x = self.pos_emb[:x_len,:]*self.alpha + x
+        x = self.pe[:x_len,:]*self.alpha + x
         return x
 
-    def pos_table(n_position, hid_dim, padding_idx=None):
 
-        def cal_angle(position, hid_idx):
-            return position / np.power(10000, 2 * (hid_idx // 2) / hid_dim)
+    def _get_pos_matrix(self, num_pos, hid_dim):
+        pe = torch.zeros(num_pos, hid_dim)
+        position = torch.arange(0, num_pos, dtype=torch.float).unsqueeze(1)
+        div_term = torch.pow(10000, torch.arange(0, hid_dim, 2).float() / hid_dim)
 
-        def get_posi_angle_vec(position):
-            return [cal_angle(position, hid_j) for hid_j in range(hid_dim)]
+        pe[:, 0::2] = torch.sin(position / div_term)
+        pe[:, 1::2] = torch.cos(position / div_term)
 
-        sinusoid_table = np.array([get_posi_angle_vec(pos_i)
-                                   for pos_i in range(n_position)])
-
-        sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])  # dim 2i
-        sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])  # dim 2i+1
-
-    
-        if padding_idx is not None:
-            # zero vector for padding dimension
-            sinusoid_table[padding_idx] = 0.
-
-        return torch.FloatTensor(sinusoid_table)
-
-class PosEmbeddingLayer_1(nn.Module):
-    def __init__(self, num_pos, hid_dim, padding_idx=0):
-        super(PosEmbeddingLayer_1, self).__init__()
-        self.embedding = nn.Embedding(
-            num_pos, hid_dim, padding_idx=padding_idx)
-
-    def forward(self, x, x_pos):
-        pos = self.embedding(x_pos)
-        x = x + pos
-        return x
+        return pe
 
 
 class MultiHeadAttentionLayer(nn.Module):
@@ -290,7 +253,7 @@ class TransformerEncoderLayer(nn.Module):
                  activation="relu"):
 
         super(TransformerEncoderLayer, self).__init__()
-        self.self_attn = nn.MultiHeadAttention(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
 
         self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
         self.ff_linear2 = Linear(pf_dim, hid_dim)
@@ -301,6 +264,7 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src, src_attn_mask=None, src_key_padding_mask=None):
+ 
         src_, src_align = self.self_attn(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
         src = self.ff_norm1(src + self.dropout(src_))
 
@@ -326,7 +290,7 @@ class DecoderLayer(nn.Module):
         self.self_attn_layer_norm = nn.LayerNorm(hid_dim)
         self.enc_attn_layer_norm = nn.LayerNorm(hid_dim)
         self.ff_layer_norm = nn.LayerNorm(hid_dim)
-        self.self_attention = MultiHeadAttentionLayer(
+        self.self_attention = MultiheadAttentionLayer(
             hid_dim, n_heads, dropout, device)
         self.encoder_attention = MultiHeadAttentionLayer(
             hid_dim, n_heads, dropout, device)
@@ -373,20 +337,21 @@ class DecoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, hid_dim, n_heads, pf_dim, dropout=0.1, activation="relu"):
         super(TransformerDecoderLayer, self).__init__()
-        self.self_attn = nn.MultiHeadAttention(hid_dim, n_heads, dropout=dropout)
-        self.cross_attn = nn.MultiHeadAttention(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        self.cross_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
 
-        self.ff_linear1 = Linear(hid_dim, pd_dim, w_init_gain=activation)
-        self.ff_linear2 = Linear(pd_dim, hid_dim)
+        self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
+        self.ff_linear2 = Linear(pf_dim, hid_dim)
 
         self.ff_norm1 = nn.LayerNorm(hid_dim)
         self.ff_norm2 = nn.LayerNorm(hid_dim)
-        self.ff_norm2 = nn.LayerNorm(hid_dim)
+        self.ff_norm3 = nn.LayerNorm(hid_dim)
 
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, tgt, src, tgt_attn_mask=None, src_attn_mask=None, tgt_key_padding_mask=None, src_key_padding_mask=None):
-        
+
+       
         tgt2, tgt_align = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_attn_mask, key_padding_mask=tgt_key_padding_mask)
         tgt = self.ff_norm1(tgt + self.dropout(tgt2))
 
