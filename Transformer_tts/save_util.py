@@ -88,7 +88,7 @@ class TTSWriter(SummaryWriter):
 
 
 def save_model(model, optimizer, iteration, params_dict, model_path='./checkpoint/saved_model', model_name='model.pt'):
-    print("Saving the model, optimizer, and params at {} to {}".format(iteration, model_path))
+    print("Saving the model, optimizer, and params at {} to {}".format(iteration,model_name))
     model_file_path = os.path.join(model_path, model_name)
     torch.save({'iteration':iteration,
                 'model_dict':model.state_dict(),

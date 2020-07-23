@@ -9,7 +9,7 @@ import torch.nn as nn
 import sounddevice as sd
 import soundfile as sf
 
-from data_utils import text2seq, mel2wave
+# from data_utils import text2seq, mel2wave
 
 def adjust_learning_rate(optimizer, step_num, init_lr, warmup_step=4000):
     lr = init_lr* min(step_num * warmup_step**-1.5, step_num**-0.5)
@@ -74,11 +74,6 @@ def validate(model, device, val_loader, iteration, writer, params):
             gate_avg += gate_loss.item()
             guide_avg += guide_loss.item()
 
-            if i == 1:
-                input = mel.to(device), seq.to(device), mel_len.to(device), seq_len.to(device), gate.to(device)
-                mel_val, stop_val, mel_loss_val, gate_loss_val, guide_loss_val = model.inference(input=input)
-                
-
         print('Test set: Average mel linear loss: {:.4f}'.format(mel_linear_avg/(i+1)))
         print('Test set: Average mel post loss: {:.4f}'.format(mel_post_avg/(i+1)))
         print('Test set: Average gate loss: {:.4f}'.format(gate_avg/(i+1)))
@@ -113,89 +108,89 @@ def validate(model, device, val_loader, iteration, writer, params):
     return total_loss
 
 
-def inference(model, device, test_loader, criterion, params):
-    print('\ninference…')
-    model.eval()
-    with torch.no_grad():
-        for I, _data in enumerate(test_loader):
-            mel, seq, mel_pos, seq_pos = _data 
-            input = mel.to(device), seq.to(device), mel_pos.to(device), seq_pos.to(device)
+# def inference(model, device, test_loader, criterion, params):
+#     print('\ninference…')
+#     model.eval()
+#     with torch.no_grad():
+#         for I, _data in enumerate(test_loader):
+#             mel, seq, mel_pos, seq_pos = _data 
+#             input = mel.to(device), seq.to(device), mel_pos.to(device), seq_pos.to(device)
 
-            mel_input = torch.zeros([1,1,80]).to(device)
+#             mel_input = torch.zeros([1,1,80]).to(device)
 
-            for i in range(mel.shape[1]):
-                pos_mel = torch.arange(1, mel_input.size(1)+1).unsqueeze(0).to(device)
-                mel_pred, postnet_pred, stop_token,mask = model(mel_input, seq.to(device), pos_mel, seq_pos.to(device))
-                mel_input = torch.cat([mel_input, postnet_pred[:,-1:]], dim=1)
-
-            
-            output = mel_input[:,1:,:], mel_input[:,1:,:], stop_token, mask
-            print(mel_input)
-            loss, mel_pre_loss, mel_post_loss, gate_loss = criterion(output, input)
-
-            print(loss)
-            print(mel_pre_loss)
-            print(mel_post_loss)
-            print(gate_loss)
-
-
-            output = model(input[0], input[1], input[2], input[3])
-
-            print(output[0])
-            loss, mel_pre_loss, mel_post_loss, gate_loss = criterion(output, input)
-
-            pdb.set_trace()
-            print(loss)
-            print(mel_pre_loss)
-            print(mel_post_loss)
-            print(gate_loss)
+#             for i in range(mel.shape[1]):
+#                 pos_mel = torch.arange(1, mel_input.size(1)+1).unsqueeze(0).to(device)
+#                 mel_pred, postnet_pred, stop_token,mask = model(mel_input, seq.to(device), pos_mel, seq_pos.to(device))
+#                 mel_input = torch.cat([mel_input, postnet_pred[:,-1:]], dim=1)
 
             
-            # input_test = mel.squeeze(0)
-            # input_test = input_test.transpose(0,1).cpu().numpy()
+#             output = mel_input[:,1:,:], mel_input[:,1:,:], stop_token, mask
+#             print(mel_input)
+#             loss, mel_pre_loss, mel_post_loss, gate_loss = criterion(output, input)
 
-            # wav = mel2wave(input_test, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+#             print(loss)
+#             print(mel_pre_loss)
+#             print(mel_post_loss)
+#             print(gate_loss)
 
-            # sd.play(wav, 22050)
-            # status = sd.wait()
 
+#             output = model(input[0], input[1], input[2], input[3])
 
-            # output_test = output[0].squeeze(0)
-            # output_test = output_test.transpose(0,1).cpu().numpy()
+#             print(output[0])
+#             loss, mel_pre_loss, mel_post_loss, gate_loss = criterion(output, input)
 
-            # wav = mel2wave(output_test, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+#             pdb.set_trace()
+#             print(loss)
+#             print(mel_pre_loss)
+#             print(mel_post_loss)
+#             print(gate_loss)
 
-            # sd.play(wav, 22050)
-            # status = sd.wait()
             
-            # print("here is output")
-            # output = mel_input.squeeze(0)
-            # output = output.transpose(0,1).cpu().numpy()
+#             # input_test = mel.squeeze(0)
+#             # input_test = input_test.transpose(0,1).cpu().numpy()
 
-            # wav = mel2wave(output, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+#             # wav = mel2wave(input_test, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
 
-            # sd.play(wav, 22050)
-            # status = sd.wait()
+#             # sd.play(wav, 22050)
+#             # status = sd.wait()
 
-def inference_single(model, device, params):
-    model.eval()
-    text = "This is for testing."
-    text = np.asarray(text2seq(text))
-    text = torch.LongTensor(text).unsqueeze(0).to(device)
-    mel_input = torch.zeros([1,1,80]).to(device)
-    pos_text = torch.arange(1, text.size(1)+1).unsqueeze(0).to(device)
+
+#             # output_test = output[0].squeeze(0)
+#             # output_test = output_test.transpose(0,1).cpu().numpy()
+
+#             # wav = mel2wave(output_test, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+
+#             # sd.play(wav, 22050)
+#             # status = sd.wait()
+            
+#             # print("here is output")
+#             # output = mel_input.squeeze(0)
+#             # output = output.transpose(0,1).cpu().numpy()
+
+#             # wav = mel2wave(output, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+
+#             # sd.play(wav, 22050)
+#             # status = sd.wait()
+
+# def inference_single(model, device, params):
+#     model.eval()
+#     text = "This is for testing."
+#     text = np.asarray(text2seq(text))
+#     text = torch.LongTensor(text).unsqueeze(0).to(device)
+#     mel_input = torch.zeros([1,1,80]).to(device)
+#     pos_text = torch.arange(1, text.size(1)+1).unsqueeze(0).to(device)
     
-    with torch.no_grad():
-        for i in range(800):
-            pos_mel = torch.arange(1, mel_input.size(1)+1).unsqueeze(0).to(device)
-            mel_pred, postnet_pred, stop_token = model(mel_input, text, pos_mel, pos_text)
-            mel_input = torch.cat([mel_input, postnet_pred[:,-1:]], dim=1)
-    mel_input = mel_input[:,1:,:].squeeze(0)
-    mel_input = mel_input.transpose(0,1).cpu().numpy()    
-    wav = mel2wave(mel_input, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+#     with torch.no_grad():
+#         for i in range(800):
+#             pos_mel = torch.arange(1, mel_input.size(1)+1).unsqueeze(0).to(device)
+#             mel_pred, postnet_pred, stop_token = model(mel_input, text, pos_mel, pos_text)
+#             mel_input = torch.cat([mel_input, postnet_pred[:,-1:]], dim=1)
+#     mel_input = mel_input[:,1:,:].squeeze(0)
+#     mel_input = mel_input.transpose(0,1).cpu().numpy()    
+#     wav = mel2wave(mel_input, params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
 
-    sd.play(wav, 22050)
-    status = sd.wait()
+#     sd.play(wav, 22050)
+#     status = sd.wait()
     
     
 

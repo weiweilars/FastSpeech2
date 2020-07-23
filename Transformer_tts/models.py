@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 from text_utils import symbols
-from data_utils import text2seq
+# from data_utils import text2seq
 
 import pdb
 
@@ -25,23 +25,23 @@ class EncoderPrenet(nn.Module):
         
         self.embed = nn.Embedding(voc_len, emb_dim, padding_idx=0)
 
-        # self.first_conv = Conv1dBatchNorm(emb_dim,
-        #                                  hid_dim,
-        #                                  kernel_size=kernel_size,
-        #                                  stride=1,
-        #                                  padding=int((kernel_size-1)/2),
-        #                                  dilation=1,
-        #                                  dropout=dropout)
-        # conv = Conv1dBatchNorm(hid_dim,
-        #                        hid_dim,
-        #                        kernel_size=kernel_size,
-        #                        stride=1,
-        #                        padding=int((kernel_size-1)/2),
-        #                        dilation=1,
-        #                        dropout=dropout)
+        self.first_conv = Conv1dBatchNorm(emb_dim,
+                                         hid_dim,
+                                         kernel_size=kernel_size,
+                                         stride=1,
+                                         padding=int((kernel_size-1)/2),
+                                         dilation=1,
+                                         dropout=dropout)
+        conv = Conv1dBatchNorm(hid_dim,
+                               hid_dim,
+                               kernel_size=kernel_size,
+                               stride=1,
+                               padding=int((kernel_size-1)/2),
+                               dilation=1,
+                               dropout=dropout)
 
-        # self.convolutions = nn.ModuleList(
-        #     [conv for _ in range(num_conv - 1)])
+        self.convolutions = nn.ModuleList(
+            [conv for _ in range(num_conv - 1)])
 
         self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
@@ -52,11 +52,11 @@ class EncoderPrenet(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        # x = x.transpose(1, 2)
-        # x = self.first_conv(x)
-        # for conv in self.convolutions:
-        #     x = conv(x)
-        # x = x.transpose(1, 2)
+        x = x.transpose(1, 2)
+        x = self.first_conv(x)
+        for conv in self.convolutions:
+            x = conv(x)
+        x = x.transpose(1, 2)
         x = self.projection(x)
         x = self.pos_emb(x)
         x = self.pos_dropout(x)
@@ -287,51 +287,52 @@ class Model(nn.Module):
         
     def forward(self, mel, seq, mel_len, seq_len, gate):
 
-        mel_linear, mel_out, stop_tokens, _, _, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+        mel_linear, mel_out, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
 
         mel_linear_loss, mel_post_loss, gate_loss, guide_loss = self.loss_fn((mel_linear, mel_out, stop_tokens),
                                                                              (mel, gate, mel_key_mask, mel_len, seq_len),
-                                                                             mel_seq_align)
+                                                                             (mel_align, seq_align, mel_seq_align))
 
 
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
 
     def inference(self, text='', input=None, max_len=1024):
+        pass
 
-        if input is not None:
-            mel_org, seq, mel_len_org, seq_len, gate = input 
-        else:
-            label = text2seq(text)
+        # if input is not None:
+        #     mel_org, seq, mel_len_org, seq_len, gate = input 
+        # else:
+        #     label = text2seq(text)
         
-            seq = [torch.LongTensor(label)].to(device)
+        #     seq = [torch.LongTensor(label)].to(device)
 
-            seq_len = [len(label)].to(device)
+        #     seq_len = [len(label)].to(device)
         
-        mel = [text.new_zeros(1, max_len, self.params['data']['num_mel']).type(torch.LongTensor).to(device)]
+        # mel = [text.new_zeros(1, max_len, self.params['data']['num_mel']).type(torch.LongTensor).to(device)]
 
-        mel_len = [max_len]
+        # mel_len = [max_len]
 
-        stop = []
-        mel_loss, gate_loss, guide_loss = 0, 0, 0
+        # stop = []
+        # mel_loss, gate_loss, guide_loss = 0, 0, 0
   
-        for i in range(max_len):
-            mel_linear, mel_out, stop_tokens, _, _, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
-            stop.append(torch.sigmoid(stop_tokens[:,i]).item())
+        # for i in range(max_len):
+        #     mel_linear, mel_out, stop_tokens, _, _, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+        #     stop.append(torch.sigmoid(stop_tokens[:,i]).item())
 
-            if i < max_len -1:
-                mel[:,i+1,:]=mel_out[:,i,:]
+        #     if i < max_len -1:
+        #         mel[:,i+1,:]=mel_out[:,i,:]
 
-            if stop[-1]>0.8:
-                break
+        #     if stop[-1]>0.8:
+        #         break
         
-        if input is not None:
-            mel_loss, _, _, gate_loss, guide_loss = self.loss_fn((mel, mel, stop),
-                                                                 (mel_org, gate, mel_key_mask, mel_org_len, seq_len),
-                                                                 mel_seq_align)
+        # if input is not None:
+        #     mel_loss, _, _, gate_loss, guide_loss = self.loss_fn((mel, mel, stop),
+        #                                                          (mel_org, gate, mel_key_mask, mel_org_len, seq_len),
+        #                                                          mel_seq_align)
 
-        mel = mel[:,:len(stop),:]
+        # mel = mel[:,:len(stop),:]
 
-        return mel, stop, mel_loss, gate_loss, guide_loss
+        # return mel, stop, mel_loss, gate_loss, guide_loss
 
 class TSSLoss(nn.Module):
     def __init__(self, params):
@@ -354,7 +355,13 @@ class TSSLoss(nn.Module):
 
         gate_loss = nn.BCEWithLogitsLoss()(gate_out, gate_target)
 
-        guide_loss = self.guide_loss(alignments, seq_len, mel_len)
+        guide_loss_0 = self.guide_loss(alignments[0], mel_len, mel_len)
+
+        guide_loss_1 = self.guide_loss(alignments[1], seq_len, seq_len)
+
+        guide_loss_2 = self.guide_loss(alignments[2], seq_len, mel_len)
+
+        guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
         
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     

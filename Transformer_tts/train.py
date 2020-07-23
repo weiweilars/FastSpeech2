@@ -14,6 +14,8 @@ from models import Model
 from utilities import train, validate
 from save_util import save_model, get_writer
 
+from text_utils import symbols
+
 
 import argparse
 parser = argparse.ArgumentParser(description='The arguments input to the training.')
@@ -48,9 +50,9 @@ def main(model_path, model_name, log_path):
     dataset = LJSPEECH_MEL('../data',
                            params['data'],
                            url='https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
-                           wav_folder='wavs',
-                           mel_folder='mels',
                            download=True)
+
+    
 
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [12000, 1100])
 

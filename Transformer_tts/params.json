@@ -10,7 +10,8 @@
 	"min_level_db": -100,
 	"power": 1.5,
 	"gl_iter":100,
-	"num_output_per_step":1
+	"num_output_per_step":1,
+	"seq_type":"phone"
     },
     "train":
     {
@@ -19,7 +20,7 @@
 	"lr":0.05,
 	"warmup_step":4000,
 	"grad_clip_thresh":1.0,
-	"accumulation":2
+	"accumulation":6
     },
     "encoderPrenet":
     {

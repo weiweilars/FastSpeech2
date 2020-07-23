@@ -264,7 +264,6 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src, src_attn_mask=None, src_key_padding_mask=None):
- 
         src_, src_align = self.self_attn(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
         src = self.ff_norm1(src + self.dropout(src_))
 

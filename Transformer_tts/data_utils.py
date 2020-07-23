@@ -126,13 +126,9 @@ def precompute_spectrograms(path, params):
         with open(mel_filename, 'wb') as f:
             pkl.dump(melspec, f)
 
-def text2seq(text, symbol_to_id):
-    sequence=[symbol_to_id['^']]
-    sequence.extend([symbol_to_id[c] for c in text])
-    sequence.append(symbol_to_id['~'])
-    return sequence
 
 def precompute_char_phone(path):
+
     metadata_file = os.path.join(path, 'metadata.csv')
     char_folder = os.path.join(path, 'chars')
     phone_folder = os.path.join(path, 'phones')
@@ -142,12 +138,18 @@ def precompute_char_phone(path):
         os.makedirs(phone_folder)
     symbol_to_id = {s: i for i, s in enumerate(symbols)}
     g2p = G2p()
+
+    def text2seq(text, symbol_to_id):
+        sequence=[symbol_to_id['^']]
+        sequence.extend([symbol_to_id[c] for c in text])
+        sequence.append(symbol_to_id['~'])
+        return sequence
+
     data = {}
     with codecs.open(metadata_file, 'r', 'utf-8') as metadata:
         for line in metadata.readlines():
             id, _, text = line.split("|")
             id = re.sub(r'"', '', id)
-            print(id)
             clean_char = clean_text(text.rstrip())
             char_seq = text2seq(clean_char, symbol_to_id)
             clean_phone = []
@@ -161,7 +163,6 @@ def precompute_char_phone(path):
     
             char={'char':clean_char,
                   'char_seq':char_seq}
-
             char_file = os.path.join(char_folder, id+'.pkl')
             with open(char_file, 'wb') as f:
                 pkl.dump(char, f)
@@ -172,9 +173,6 @@ def precompute_char_phone(path):
             with open(phone_file, 'wb') as f:
                 pkl.dump(phone, f)
                 
-    
-    
-        
 
 if __name__ == "__main__":
 
@@ -197,7 +195,7 @@ if __name__ == "__main__":
     # data = pkl.load(file)
     # print(data)
 
-    precompute_char_phone(path)
+    # precompute_char_phone(path)
 
     # for (_, _, filename) in walk('../data/LJSpeech-1.1/wavs'):
     #     print(len(filename))
