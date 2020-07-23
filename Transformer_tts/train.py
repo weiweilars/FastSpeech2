@@ -7,20 +7,21 @@ import time
 
 from torch.utils import data
 import torch.nn as nn
-
-from dataloader_utils import LJSPEECH_MEL, data_mel_processing
-from models import Model, TSSLoss, DecoderPrenet, EncoderPrenet
-from utilities import train, test, save_model
-from save_util import plot_melspec
 import matplotlib.pyplot as plt
 
+from dataloader_utils import LJSPEECH_MEL, data_mel_processing
+from models import Model
+from utilities import train, validate
+from save_util import save_model, get_writer
+
+
 import argparse
-
 parser = argparse.ArgumentParser(description='The arguments input to the training.')
-parser.add_argument('-m', action="store", dest='model_path', default="./models/saved_model")
+parser.add_argument('-p', action="store", dest='model_path', default="./checkpoint/saved_model")
+parser.add_argument('-l', action="store", dest='log_path', default="./log")
+parser.add_argument('-n', action="store", dest='model_name', default="model.pt")
 
-
-def main(model_path):
+def main(model_path, model_name, log_path):
 
     torch.manual_seed(0)
 
@@ -61,62 +62,50 @@ def main(model_path):
                                    **kwargs)
 
     rand_sampler = torch.utils.data.RandomSampler(test_dataset, num_samples=100, replacement=True)
-    test_loader = data.DataLoader(dataset=test_dataset,
+    val_loader = data.DataLoader(dataset=test_dataset,
                                   batch_size=1,
                                   shuffle=False,
                                   sampler=rand_sampler,
-                                  collate_fn=lambda x: data_processing(
+                                  collate_fn=lambda x: data_mel_processing(
                                       x, params['data']),
                                   **kwargs)
 
-    mel, seq, gate, mel_len, seq_len = next(iter(train_loader))
-
-    print(gate)
-
-    model = Model(params).to(device)
-
-    mel_linear, mel_post, stop_tokens, mel_seq_align, _ = model.output(mel.to(device), seq.to(device), mel_len.to(device), seq_len.to(device))
-
-    fig = plot_melspec(mel.detach().cpu(), mel_linear.detach().cpu(), mel_post.detach().cpu(), mel_len.detach().cpu())
-
-    fig.savefig('test.png')
-
+    model = Model(params, device).to(device)
     # print(model)
-    # print('Num Model Parameters', sum([param.nelement() for param in model.parameters()]))
-
-    # optimizer = torch.optim.Adam(model.parameters(),
-    #                              lr = train_params['lr'],
-    #     			 betas = (0.9, 0.98),
-    #                              eps = 1e-09)
-
-    # criterion = TSSLoss(params).to(device)
-
-    # epochs = train_params['epochs']
-
-    # model_file = os.path.join(model_path, 'model.pt')
-    # if os.path.isfile(os.path.join(model_path, 'model.pt')):       
-    #     model.load_state_dict(torch.load(model_file))
-    #     best_valid_loss= test(model, device, test_loader, criterion)
-    # else:
-    #     best_valid_loss = float("inf")
-    # print(best_valid_loss)
-
+    print('Num Model Parameters', sum([param.nelement() for param in model.parameters()]))
+    epochs = train_params['epochs']
+    writer = get_writer(model_path, log_path)
+    optimizer = torch.optim.Adam(model.parameters(),
+                                 lr = train_params['lr'],
+        			 betas = (0.9, 0.98),
+                                 eps = 1e-09)
     
-    # for epoch in range(1, epochs + 1):
-    #     train(model, device, train_loader, criterion, optimizer, epoch, train_params)
-    #     if epoch == 1 and not os.path.isfile(model_file):
-    #         save_model(model, params, model_path)
-    #     test_loss = test(model, device, test_loader, criterion)
-    #     if test_loss < best_valid_loss:
-    #         print("The validation loss is improved by {}, new model is saving".format(best_valid_loss-test_loss))
-    #         best_valid_loss = test_loss
-    #         save_model(model, params, model_path)
+    iteration = 0
+
+    model_file = os.path.join(model_path, 'model.pt')
+    if os.path.isfile(model_file):
+        file = torch.load(model_file)
+        iteration = file['iteration']
+        optimizer.load_state_dict(file['optimizer'])
+        model.load_state_dict(file['model_dict'])
+        best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
+    else:
+        best_valid_loss = float("inf")
+    print(best_valid_loss)
+
+    for epoch in range(1, epochs + 1):
+        iteration = train(model, device, train_loader, optimizer, iteration, train_params, writer)
+        test_loss = validate(model, device, val_loader, iteration, writer, train_params)
+        if test_loss < best_valid_loss:
+            print("The validation loss is improved by {}, new model is saving".format(best_valid_loss-test_loss))
+            best_valid_loss = test_loss
+            save_model(model, optimizer, iteration, params, model_path, model_name)
 
 
 if __name__ == "__main__":
-    model = parser.parse_args()
+    model_info = parser.parse_args()
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
-    main(model_path = model.model_path)
+    main(model_path = model_info.model_path, model_name=model_info.model_name, log_path=model_info.log_path)
 
     

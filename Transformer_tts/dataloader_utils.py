@@ -108,6 +108,7 @@ class LJSPEECH_WAV(Dataset):
 def load_ljspeech_mel_item(line, wav_path, mel_path, ext_audio, ext_mel):
     assert len(line) == 3
     fileid, transcript, normalized_transcript = line
+    fileid = re.sub(r'"', '', fileid)
     fileid_audio = fileid + ext_audio
     fileid_audio = os.path.join(wav_path, fileid_audio)
     # Load audio
@@ -162,21 +163,20 @@ class LJSPEECH_MEL(Dataset):
     
 
     def __init__(
-            self, root, params, url=URL, wav_folder='wavs', mel_folder="mels", download=False
+            self, root, params, url=URL, wav_folder='wavs', mel_folder="mels", char_folder="chars", phone_folder="phones", download=False
     ):
 
         basename = os.path.basename(url)
         archive = os.path.join(root, basename)
 
         basename = basename.split(self._ext_archive)[0]
-        wav_folder = os.path.join(basename, wav_folder)
-        mel_folder = os.path.join(basename, mel_folder)
-
-        self._wav_path = os.path.join(root, wav_folder)
-        self._mel_path = os.path.join(root, mel_folder)
+        base_folder = os.path.join(root, basename)
         
-        
-        self._metadata_path = os.path.join(root, basename, 'metadata.csv')
+        self._wav_path = os.path.join(base_folder, wav_folder)
+        self._mel_path = os.path.join(base_folder, mel_folder)
+        self._char_path = os.path.join(base_folder, char_folder)
+        self._phone_path = os.path.join(base_folder, phone_folder)
+        self._metadata_path = os.path.join(base_folder, 'metadata.csv')
 
         if download:
             if not os.path.isdir(self._wav_path):
@@ -187,6 +187,11 @@ class LJSPEECH_MEL(Dataset):
         if not os.path.isdir(self._mel_path):
             os.makdirs(self._mel_path)
             precompute_spectrograms(self._mel_path, params)
+
+        if not os.path.isdir(self._char_path) or not os.path.isdir(self._phone_path):
+            os.makdirs(self._char_path)
+            os.makdirs(self._phone_path)
+            precompute_spectrograms(self._mel_p, params)
             
         with open(self._metadata_path, "r") as metadata:
             walker = unicode_csv_reader(metadata, delimiter="|", quoting=csv.QUOTE_NONE)

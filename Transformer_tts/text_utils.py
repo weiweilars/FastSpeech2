@@ -13,7 +13,10 @@ _valid_symbols = [
 ]
 
 
- # List of (regular expression, replacement) pairs for abbreviations:
+""" from https://github.com/keithito/tacotron """
+
+
+# List of (regular expression, replacement) pairs for abbreviations:
 _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in [
     ('mrs', 'misess'),
     ('mr', 'mister'),
@@ -35,19 +38,31 @@ _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in 
     ('ft', 'fort'),
 ]]
 
-_pad        = '_'
-_punctuation = '!\'(),.:;?"[] '
-_special = '-'
-_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+_pad = '_'
+_sos = '^'
+_eos = '~'
+_punctuation = "!',.? "
+_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 # Prepend "@" to ARPAbet symbols to ensure uniqueness (some are the same as uppercase letters):
 _arpabet = ['@' + s for s in _valid_symbols]
 
-symbols = [_pad] + list(_special) + list(_punctuation) + list(_letters) + _arpabet
+symbols = [_pad, _sos, _eos] + list(_punctuation) + list(_letters) + _arpabet
 
+def remove_unnecessary_symbols(text):
+    # added
+    text = re.sub(r'[\(\)\[\]\<\>\"]+', '', text)
+    return text
 
+def expand_symbols(text):
+    # added
+    text = re.sub("\;", ",", text)
+    text = re.sub("\:", ",", text)
+    text = re.sub("\-", " ", text)
+    text = re.sub("\&", "and", text)
+    return text
 
-def clean_text(text):
+def clean_text(text, uppercase=True):
     
     # change to correct format
     x = unidecode(text).lower()
@@ -59,7 +74,17 @@ def clean_text(text):
     for regex, replacement in _abbreviations:
         x = re.sub(regex, replacement, x)
 
+    x = remove_unnecessary_symbols(text)
+    x = expand_symbols(x)  
+
+    if uppercase:
+        x = x.upper()
+
     # remove extra white space 
     x = re.sub(re.compile(r'\s+'), ' ', x)
+
+    # exception (borrow from Deepest-project/Transformer-TTs)
+    if x[0]=="'" and x[-1]=="'":
+        x = x[1:-1]
     
     return x

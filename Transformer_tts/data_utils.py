@@ -9,6 +9,9 @@ import librosa
 import numpy as np
 from text_utils import symbols, clean_text
 import re
+from g2p_en import G2p
+import codecs
+from os import walk
 
 
 ### for debugging
@@ -82,32 +85,32 @@ def mel2wave(spec, sample_rate, preemphasis, num_freq, frame_size_ms, frame_hop_
     return x
 
 
-def text2seq(text):
-    sequence = []
-    symbols_to_id = {s: i for i, s in enumerate(symbols)}
-    curly = re.compile(r'(.*?)\{(.+?)\}(.*)')
-    while len(text):
-        m = curly.match(text)
-        if not m:
-            sequence += [symbols_to_id[s] for s in clean_text(text) if s is not '_' and s is not '~']
-            break
-        sequence += [symbols_to_id[s] for s in clean_text(m.group(1)) if s is not '_' and s is not '~']
-        group2 = ['@' + s for s in m.group(2).split()]
-        sequence += [symbols_to_id[s] for s in group2 if s is not '_' and s is not '~']
-        text = m.group(3)    
-    return sequence
+# def text2seq(text):
+#     sequence = []
+#     symbols_to_id = {s: i for i, s in enumerate(symbols)}
+#     curly = re.compile(r'(.*?)\{(.+?)\}(.*)')
+#     while len(text):
+#         m = curly.match(text)
+#         if not m:
+#             sequence += [symbols_to_id[s] for s in clean_text(text) if s is not '_' and s is not '~']
+#             break
+#         sequence += [symbols_to_id[s] for s in clean_text(m.group(1)) if s is not '_' and s is not '~']
+#         group2 = ['@' + s for s in m.group(2).split()]
+#         sequence += [symbols_to_id[s] for s in group2 if s is not '_' and s is not '~']
+#         text = m.group(3)    
+#     return sequence
 
-def seq2text(seq):
-    id_to_symbols = {i: s for i, s in enumerate(symbols)}
-    result = ''
-    for id in sequence:
-        if id in id_to_symbols:
-            s = id_to_symbols[id]
-            if len(s) > 1 and s[0] == '@':
-                s = '{%s}' % s[1:]
-            result += s
+# def seq2text(seq):
+#     id_to_symbols = {i: s for i, s in enumerate(symbols)}
+#     result = ''
+#     for id in sequence:
+#         if id in id_to_symbols:
+#             s = id_to_symbols[id]
+#             if len(s) > 1 and s[0] == '@':
+#                 s = '{%s}' % s[1:]
+#             result += s
 
-    return result.replace('}{', ' ')
+#     return result.replace('}{', ' ')
 
 
 def precompute_spectrograms(path, params):
@@ -120,27 +123,84 @@ def precompute_spectrograms(path, params):
         waveform, sample_rate = torchaudio.load(filename)
         melspec = wave2mel(waveform[0].tolist(), params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'])
         mel_filename = os.path.join(mel_path,os.path.basename(filename).split('.')[0]) + '.pkl'
-        with open(mel_filename, 'B') as f:
+        with open(mel_filename, 'wb') as f:
             pkl.dump(melspec, f)
+
+def text2seq(text, symbol_to_id):
+    sequence=[symbol_to_id['^']]
+    sequence.extend([symbol_to_id[c] for c in text])
+    sequence.append(symbol_to_id['~'])
+    return sequence
+
+def precompute_char_phone(path):
+    metadata_file = os.path.join(path, 'metadata.csv')
+    char_folder = os.path.join(path, 'chars')
+    phone_folder = os.path.join(path, 'phones')
+    if not os.path.isdir(char_folder):
+        os.makedirs(char_folder)
+    if not os.path.isdir(phone_folder):
+        os.makedirs(phone_folder)
+    symbol_to_id = {s: i for i, s in enumerate(symbols)}
+    g2p = G2p()
+    data = {}
+    with codecs.open(metadata_file, 'r', 'utf-8') as metadata:
+        for line in metadata.readlines():
+            id, _, text = line.split("|")
+            id = re.sub(r'"', '', id)
+            print(id)
+            clean_char = clean_text(text.rstrip())
+            char_seq = text2seq(clean_char, symbol_to_id)
+            clean_phone = []
+
+            for s in g2p(clean_char.lower()):
+                if '@'+s in symbol_to_id:
+                    clean_phone.append('@'+s)
+                else:
+                    clean_phone.append(s)
+            phone_seq = text2seq(clean_phone, symbol_to_id)
+    
+            char={'char':clean_char,
+                  'char_seq':char_seq}
+
+            char_file = os.path.join(char_folder, id+'.pkl')
+            with open(char_file, 'wb') as f:
+                pkl.dump(char, f)
+                
+            phone={'phone':clean_phone,
+                  'phone_seq':phone_seq}
+            phone_file = os.path.join(phone_folder, id+'.pkl')
+            with open(phone_file, 'wb') as f:
+                pkl.dump(phone, f)
+                
+    
+    
         
 
 if __name__ == "__main__":
 
-    # path = "../data/LJSpeech-1.1"
+    path = "../data/LJSpeech-1.1"
 
-    with open('./params.json') as json_file:
-            params = json.load(json_file)['data']
+    # with open('./params.json') as json_file:
+    #         params = json.load(json_file)['data']
 
-    # precompute_spectrograms(path, params)
+    # # precompute_spectrograms(path, params)
 
 
-    filename_1 = '../data/LJSpeech-1.1/wavs/LJ002-0010.wav'
-    waveform, sample_rate = torchaudio.load(filename_1)
-    melspec = wave2mel(waveform[0].tolist(), params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'])
+    # filename_1 = '../data/LJSpeech-1.1/wavs/LJ002-0010.wav'
+    # waveform, sample_rate = torchaudio.load(filename_1)
+    # melspec = wave2mel(waveform[0].tolist(), params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'])
 
-    print(melspec)
+    # print(melspec)
     
-    filename_2 = '../data/LJSpeech-1.1/mels/LJ002-0010.pkl'
-    file = open(filename_2, 'rb')
-    data = pkl.load(file)
-    print(data)
+    # filename_2 = '../data/LJSpeech-1.1/mels/LJ002-0010.pkl'
+    # file = open(filename_2, 'rb')
+    # data = pkl.load(file)
+    # print(data)
+
+    precompute_char_phone(path)
+
+    # for (_, _, filename) in walk('../data/LJSpeech-1.1/wavs'):
+    #     print(len(filename))
+        
+
+    

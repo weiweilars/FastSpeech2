@@ -1,6 +1,7 @@
 import os
 import torch
 import pdb
+import json
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 
@@ -21,16 +22,39 @@ def plot_melspec(target, melspec, melspec_post, mel_lengths):
 
     return fig
 
+def plot_alignments(alignments, mel_len=[0], seq_len=[0], att_type='mel_seq'):
+    n_layers = alignments.size(1)
+    fig, axes = plt.subplots(n_layers, 1, figsize=(10,10*n_layers))
+    L, T = seq_len[-1], mel_len[-1]
+    
+    for layer in range(n_layers):
+        if att_type=='seq':
+            align = alignments[-1, layer].contiguous()
+            axes[layer].imshow(align[:L, :L], aspect='auto')
+            axes[layer].xaxis.tick_top()
 
+        elif att_type=='mel':
+            align = alignments[-1, layer].contiguous()
+            axes[layer].imshow(align[:T, :T], aspect='auto')
+            axes[layer].xaxis.tick_top()
+
+        elif att_type=='mel_seq':
+            align = alignments[-1, layer].transpose(0,1).contiguous()
+            axes[layer].imshow(align[:L, :T], origin='lower', aspect='auto')
+        
+    return fig
+
+def plot_gate(gate_out):
+    fig = plt.figure(figsize=(10,5))
+    plt.plot(torch.sigmoid(gate_out[-1]))
+    return fig
 
 def get_writer(output_directory, log_directory):
-    logging_path='{output_directory}/{log_directory}'
+    logging_path=os.path.join(output_directory, log_directory)
     
-    if os.path.exists(logging_path):
-        raise Exception('The experiment already exists')
-    else:
+    if not os.path.exists(logging_path):
         os.mkdir(logging_path)
-        writer = TTSWriter(logging_path)
+    writer = TTSWriter(logging_path)
             
     return writer
 
@@ -39,26 +63,37 @@ class TTSWriter(SummaryWriter):
         super(TTSWriter, self).__init__(log_dir)
         
     def add_losses(self, mel_linear_loss, mel_post_loss, gate_loss, guide_loss, global_step, phase):
-        self.add_scalar('{phase}_mel_linear_loss', mel_linear_loss, global_step)
-        self.add_scalar('{phase}_mel_pos_loss', mel_post_loss, global_step)
-        self.add_scalar('{phase}_gate_loss', gate_loss, global_step)
-        self.add_scalar('{phase}_guide_loss', guide_loss, global_step)
+        self.add_scalar('{}_mel_linear_loss'.format(phase), mel_linear_loss, global_step)
+        self.add_scalar('{}_mel_post_loss'.format(phase), mel_post_loss, global_step)
+        self.add_scalar('{}_gate_loss'.format(phase), gate_loss, global_step)
+        self.add_scalar('{}_guide_loss'.format(phase), guide_loss, global_step)
         
-    def add_specs(self, mel_padded, mel_out, mel_out_post, mel_lengths, global_step, phase):
-        mel_fig = plot_melspec(mel_padded, mel_out, mel_out_post, mel_lengths)
-        self.add_figure('{phase}_melspec', mel_fig, global_step)
+    def add_specs(self, mel, mel_linear, mel_post, mel_len, global_step, phase):
+        mel_fig = plot_melspec(mel, mel_linear, mel_post, mel_len)
+        self.add_figure('{}_melspec'.format(phase), mel_fig, global_step)
         
-    # def add_alignments(self, enc_alignments, dec_alignments, enc_dec_alignments,
-    #                    text_padded, mel_lengths, text_lengths, global_step, phase):
-    #     enc_align_fig = plot_alignments(enc_alignments, text_padded, mel_lengths, text_lengths, 'enc')
-    #     self.add_figure('{phase}_enc_alignments', enc_align_fig, global_step)
+    def add_alignments(self, mel_align, seq_align, mel_seq_align, mel_len, seq_len, global_step, phase):
+        enc_align_fig = plot_alignments(seq_align, seq_len=seq_len, att_type='seq')
+        self.add_figure('{}_seq_alignments'.format(phase), enc_align_fig, global_step)
 
-    #     dec_align_fig = plot_alignments(dec_alignments, text_padded, mel_lengths, text_lengths, 'dec')
-    #     self.add_figure('{phase}_dec_alignments', dec_align_fig, global_step)
+        dec_align_fig = plot_alignments(mel_align, mel_len=mel_len, att_type='mel')
+        self.add_figure('{}_mel_alignments'.format(phase), dec_align_fig, global_step)
 
-    #     enc_dec_align_fig = plot_alignments(enc_dec_alignments, text_padded, mel_lengths, text_lengths, 'enc_dec')
-    #     self.add_figure('{phase}_enc_dec_alignments', enc_dec_align_fig, global_step)
+        enc_dec_align_fig = plot_alignments(mel_seq_align, mel_len=mel_len, seq_len=seq_len, att_type='mel_seq')
+        self.add_figure('{}_mel_seq_alignments'.format(phase), enc_dec_align_fig, global_step)
         
-    # def add_gates(self, gate_out, global_step, phase):
-    #     gate_fig = plot_gate(gate_out)
-    #     self.add_figure('{phase}_gate_out', gate_fig, global_step)
+    def add_gates(self, gate_out, global_step, phase):
+        gate_fig = plot_gate(gate_out)
+        self.add_figure('{}_gate_out'.format(phase), gate_fig, global_step)
+
+
+def save_model(model, optimizer, iteration, params_dict, model_path='./checkpoint/saved_model', model_name='model.pt'):
+    print("Saving the model, optimizer, and params at {} to {}".format(iteration, model_path))
+    model_file_path = os.path.join(model_path, model_name)
+    torch.save({'iteration':iteration,
+                'model_dict':model.state_dict(),
+                'optimizer':optimizer.state_dict()}, model_file_path)
+
+    params_file = os.path.join(model_path, 'params.json')
+    with open(params_file, 'w') as f:
+        json.dump(params_dict, f)
