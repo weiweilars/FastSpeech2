@@ -73,7 +73,7 @@ def main(model_path, model_name, log_path):
                                   **kwargs)
 
     model = Model(params, device).to(device)
-    # print(model)
+    print(model)
     print('Num Model Parameters', sum([param.nelement() for param in model.parameters()]))
     epochs = train_params['epochs']
     writer = get_writer(model_path, log_path)

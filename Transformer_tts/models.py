@@ -23,7 +23,7 @@ class EncoderPrenet(nn.Module):
         pos_dropout = params['pos_dropout']
         num_pos = params['num_pos']
         
-        self.embed = nn.Embedding(voc_len, emb_dim, padding_idx=0)
+        self.embed = nn.Embedding(voc_len, emb_dim)
 
         self.first_conv = Conv1dBatchNorm(emb_dim,
                                           hid_dim,
@@ -43,22 +43,22 @@ class EncoderPrenet(nn.Module):
                                activation='relu',
                                dropout=dropout)
 
-        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])
+        # self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
-        self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
+        self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
 
         self.pos_dropout = nn.Dropout(pos_dropout)
 
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
 
 
     def forward(self, x):
         x = self.embed(x)
-        x = x.transpose(1, 2)
-        x = self.first_conv(x)
-        for conv in self.convolutions:
-            x = conv(x)
-        x = x.transpose(1, 2)
+        # x = x.transpose(1, 2)
+        # x = self.first_conv(x)
+        # for conv in self.convolutions:
+        #     x = conv(x)
+        # x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -82,7 +82,7 @@ class DecoderPrenet(nn.Module):
 
         self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
         
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
 
         self.dropout = dropout
         
@@ -353,7 +353,7 @@ class Model(nn.Module):
 
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
 
-    def inference(self, seq, seq_len, max_len=2000, type='no'):
+    def inference(self, seq, seq_len, max_len=2000, use_post=True, type='no'):
 
         mel = torch.zeros(1, max_len,self.params['data']['num_mel']).to(self.device)
         mel_len = torch.tensor([max_len]).to(self.device)
@@ -361,9 +361,13 @@ class Model(nn.Module):
         stop = []
   
         for i in range(max_len):
-            _, mel_out, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len, type=type)
+            mel_linear, mel_post, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len, type=type)
             stop.append(torch.sigmoid(stop_tokens[:,i]).item())
-
+            if use_post:
+                mel_out = mel_post
+            else:
+                mel_out = mel_linear
+                
             if i < max_len -1:
                 mel[:,i+1,:]=mel_out[:,i,:]
 
