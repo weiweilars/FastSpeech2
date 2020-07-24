@@ -47,7 +47,9 @@ class EncoderPrenet(nn.Module):
 
         self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, pos_dropout, padding_idx=0)
+        self.pos_dropout = nn.Dropout(pos_dropout)
+
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
 
 
     def forward(self, x):
@@ -59,7 +61,7 @@ class EncoderPrenet(nn.Module):
         x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
-        x = x + x_pos
+        x = self.pos_dropout(x + x_pos)
         return x
 
 
@@ -79,15 +81,19 @@ class DecoderPrenet(nn.Module):
             Linear(hid_dim, hid_dim, w_init_gain="relu"))
 
         self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
-        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim, pos_dropout, padding_idx=0)
-        self.dropout = dropout 
         
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
+
+        self.dropout = dropout
+        
+        self.pos_dropout = nn.Dropout(pos_dropout)
+
     def forward(self, x):
         for layer in self.layers:
             x = F.dropout(F.relu(layer(x)), self.dropout, self.training)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
-        x = x + x_pos
+        x = self.pos_dropout(x + x_pos)
         return x
 
 class Encoder(nn.Module):

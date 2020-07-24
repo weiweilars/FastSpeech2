@@ -53,16 +53,14 @@ class Conv1dBatchNorm(nn.Module):
         return out 
 
 class PosEmbeddingLayer(nn.Module):
-    def __init__(self, num_pos, hid_dim, dropout, padding_idx=0):
+    def __init__(self, num_pos, hid_dim, padding_idx=0):
         super(PosEmbeddingLayer, self).__init__()
         self.register_buffer('pe', self._get_pos_matrix(num_pos, hid_dim))
         self.alpha = nn.Parameter(torch.ones(1))
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_len = x.shape[1]
         pos = self.pe[:x_len,:]*self.alpha
-        pos = self.dropout(pos)
         return x
 
     def _get_pos_matrix(self, num_pos, hid_dim):
