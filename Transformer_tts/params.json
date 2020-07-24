@@ -15,17 +15,17 @@
     },
     "train":
     {
-	"batch_size":8,
+	"batch_size":6,
 	"epochs":200,
 	"lr":0.05,
 	"warmup_step":4000,
 	"grad_clip_thresh":1.0,
-	"accumulation":6
+	"accumulation":2
     },
     "encoderPrenet":
     {
-	"emb_dim": 512,
-	"hid_dim":512,
+	"emb_dim":256,
+	"hid_dim":256,
 	"kernel_size":5,
 	"num_conv": 3,
 	"dropout":0.5,
@@ -36,26 +36,26 @@
     {
 	"mel_dim":80,
 	"hid_dim":256,
-	"out_dim":512,
-	"dropout":0.1,
+	"out_dim":256,
+	"dropout":0.5,
 	"pos_dropout":0.1,
 	"num_pos":10000
     },
     "encoder":
     {
 	"num_layers":6,
-	"hid_dim":512,
+	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.2
+	"dropout":0.1
     },
     "decoder":
     {
 	"num_layers":6,
-	"hid_dim":512,
+	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.2,
+	"dropout":0.1,
 	"num_mel":80
     },
     "postnet":

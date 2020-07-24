@@ -26,28 +26,28 @@ class EncoderPrenet(nn.Module):
         self.embed = nn.Embedding(voc_len, emb_dim, padding_idx=0)
 
         self.first_conv = Conv1dBatchNorm(emb_dim,
-                                         hid_dim,
-                                         kernel_size=kernel_size,
-                                         stride=1,
-                                         padding=int((kernel_size-1)/2),
-                                         dilation=1,
-                                         dropout=dropout)
+                                          hid_dim,
+                                          kernel_size=kernel_size,
+                                          stride=1,
+                                          padding=int((kernel_size-1)/2),
+                                          dilation=1,
+                                          activation='relu',
+                                          dropout=dropout)
+        
         conv = Conv1dBatchNorm(hid_dim,
                                hid_dim,
                                kernel_size=kernel_size,
                                stride=1,
                                padding=int((kernel_size-1)/2),
                                dilation=1,
+                               activation='relu',
                                dropout=dropout)
 
-        self.convolutions = nn.ModuleList(
-            [conv for _ in range(num_conv - 1)])
+        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])
 
         self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
-        self.pos_dropout = nn.Dropout(pos_dropout)
-        
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, padding_idx=0)
+        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim, pos_dropout, padding_idx=0)
 
 
     def forward(self, x):
@@ -58,8 +58,8 @@ class EncoderPrenet(nn.Module):
             x = conv(x)
         x = x.transpose(1, 2)
         x = self.projection(x)
-        x = self.pos_emb(x)
-        x = self.pos_dropout(x)
+        x_pos = self.pos_emb(x)
+        x = x + x_pos
         return x
 
 
@@ -79,16 +79,15 @@ class DecoderPrenet(nn.Module):
             Linear(hid_dim, hid_dim, w_init_gain="relu"))
 
         self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
-        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim, padding_idx=0)
+        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim, pos_dropout, padding_idx=0)
         self.dropout = dropout 
-        self.pos_dropout = nn.Dropout(pos_dropout)
         
     def forward(self, x):
         for layer in self.layers:
             x = F.dropout(F.relu(layer(x)), self.dropout, self.training)
         x = self.projection(x)
-        x = self.pos_emb(x)
-        x = self.pos_dropout(x)
+        x_pos = self.pos_emb(x)
+        x = x + x_pos
         return x
 
 
@@ -174,50 +173,45 @@ class Postnet(nn.Module):
         kernel_size = params['kernel_size']
         num_conv = params['num_conv']
         dropout = params['dropout']
-        
-        self.first_cov = nn.Sequential(
-                Conv1d(num_mel, hid_dim,
-                            kernel_size=kernel_size,
-                            stride=1,
-                            padding=int((kernel_size - 1) / 2),
-                            dilation=1, w_init_gain='tanh'),
-                nn.BatchNorm1d(hid_dim))
 
-        convolution = nn.Sequential(
-            Conv1d(hid_dim,
-                        hid_dim,
-                        kernel_size=kernel_size,
-                        stride=1,
-                        padding=int((kernel_size-1)/2),
-                        dilation=1,
-                        w_init_gain='tanh'),
-            nn.BatchNorm1d(hid_dim),
-        )
+        self.first_cov = Conv1dBatchNorm(num_mel,
+                                         hid_dim,
+                                         kernel_size=kernel_size,
+                                         stride=1,
+                                         padding=int((kernel_size-1)/2),
+                                         dilation=1,
+                                         activation='tanh',
+                                         dropout=dropout)
+        
+        convolution = Conv1dBatchNorm(hid_dim,
+                                      hid_dim,
+                                      kernel_size=kernel_size,
+                                      stride=1,
+                                      padding=int((kernel_size-1)/2),
+                                      dilation=1,
+                                      activation='tanh',
+                                      dropout=dropout)
 
         self.convolutions = nn.ModuleList(
             [convolution for _ in range(num_conv - 2)])
         
-
-        self.last_cov = nn.Sequential(
-            Conv1d(hid_dim, num_mel,
-                            kernel_size=kernel_size,
-                            stride=1,
-                            padding=int((kernel_size - 1) / 2),
-                            dilation=1, w_init_gain='linear'),
-            nn.BatchNorm1d(num_mel))
-
-        self.normalization=nn.BatchNorm1d(num_mel)
-        self.dropout = dropout
+        self.last_cov = Conv1dBatchNorm(hid_dim,
+                                        num_mel,
+                                        kernel_size=kernel_size,
+                                        stride=1,
+                                        padding=int((kernel_size-1)/2),
+                                        dilation=1,
+                                        activation='linear',
+                                        dropout=dropout)
 
     def forward(self, x):
-        x = x.transpose(1,2)
-        _x = F.dropout(torch.tanh(self.first_cov(x)), self.dropout, self.training)
-        for i in range(len(self.convolutions)):
-            _x = F.dropout(torch.tanh(self.convolutions[i](
-                _x)), self.dropout, self.training)
-        _x = F.dropout(self.last_cov(_x), self.dropout, self.training)
+        _x = x.transpose(1,2)
+        _x = self.first_cov(_x)
+        for layer in self.convolutions:
+            _x = layer(_x)
+        _x = self.last_cov(_x)
+        _x = _x.transpose(1,2)
         x = x + _x
-        x = x.transpose(1,2)
         return x
 
 
@@ -355,13 +349,13 @@ class TSSLoss(nn.Module):
 
         gate_loss = nn.BCEWithLogitsLoss()(gate_out, gate_target)
 
-        guide_loss_0 = self.guide_loss(alignments[0], mel_len, mel_len)
+        # guide_loss = self.guide_loss(alignments[0], mel_len, mel_len)
 
-        guide_loss_1 = self.guide_loss(alignments[1], seq_len, seq_len)
+        # guide_loss_1 = self.guide_loss(alignments[1], seq_len, seq_len)
 
-        guide_loss_2 = self.guide_loss(alignments[2], seq_len, mel_len)
+        guide_loss = self.guide_loss(alignments[2], seq_len, mel_len)
 
-        guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
+        # guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
         
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     
@@ -380,7 +374,7 @@ class TSSLoss(nn.Module):
 
         for i, (t, l) in enumerate(zip(mel_len, seq_len)):
             mel_seq = (torch.arange(t).to(torch.float32).unsqueeze(-1)/t).to(device)
-            text_seq = (torch.arange(l).to(torch.float32).unsqueeze(0)/t).to(device)
+            text_seq = (torch.arange(l).to(torch.float32).unsqueeze(0)/l).to(device)
             x = torch.pow(mel_seq-text_seq, 2)
             W[i, :t, :l] += (1-torch.exp(-3.125*x)).to(device)
             mask[i, :t, :l] = 1

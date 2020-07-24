@@ -32,7 +32,7 @@ class Conv1d(nn.Conv1d):
 
         
 class Conv1dBatchNorm(nn.Module):
-    def __init__(self, in_dim, out_dim, kernel_size, stride, padding, dilation=1, bias=True, activation="relu", dropout=0.1):
+    def __init__(self, in_dim, out_dim, kernel_size, stride, padding, dilation=1, bias=True, activation="linear", dropout=0.1):
         super(Conv1dBatchNorm,self).__init__()
 
         self.conv = Conv1d(in_dim, out_dim, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, w_init_gain=activation)
@@ -40,26 +40,29 @@ class Conv1dBatchNorm(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.activation = _get_activation_fn(activation)
+        if activation is not 'linear':
+            self.activation = _get_activation_fn(activation)
 
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
-        x = self.activation(x)
+        if activateion is not 'linear':
+            x = self.activation(x)
         out = self.dropout(x)
         return out 
 
 class PosEmbeddingLayer(nn.Module):
-    def __init__(self, num_pos, hid_dim, padding_idx=0):
+    def __init__(self, num_pos, hid_dim, dropout, padding_idx=0):
         super(PosEmbeddingLayer, self).__init__()
         self.register_buffer('pe', self._get_pos_matrix(num_pos, hid_dim))
         self.alpha = nn.Parameter(torch.ones(1))
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_len = x.shape[1]
-        x = self.pe[:x_len,:]*self.alpha + x
+        pos = self.pe[:x_len,:]*self.alpha
+        pos = self.dropout(pos)
         return x
-
 
     def _get_pos_matrix(self, num_pos, hid_dim):
         pe = torch.zeros(num_pos, hid_dim)
@@ -264,11 +267,11 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src, src_attn_mask=None, src_key_padding_mask=None):
-        src_, src_align = self.self_attn(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
-        src = self.ff_norm1(src + self.dropout(src_))
+        src2, src_align = self.self_attn(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
+        src = self.ff_norm1(src + self.dropout(src2))
 
-        src_ = self.ff_linear2(self.dropout(F.relu(self.ff_linear1(src))))
-        src = self.ff_norm2(src + self.dropout(src_))
+        src2 = self.ff_linear2(self.dropout(F.relu(self.ff_linear1(src))))
+        src = self.ff_norm2(src + self.dropout(src2))
 
         return src, src_align
 
