@@ -5,21 +5,13 @@ import json
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 
-def plot_melspec(target, melspec, melspec_post, mel_lengths):
-    fig, axes = plt.subplots(3, 1, figsize=(20,30))
+def plot_melspec(mels, mel_lengths):
+    fig, axes = plt.subplots(len(mels), 1, figsize=(8*len(mels), 30))
     T = mel_lengths[-1]
-    axes[0].imshow(target[-1].transpose(0,1)[:,:T],
-                   origin='lower',
-                   aspect='auto')
-
-    axes[1].imshow(melspec[-1].transpose(0,1)[:,:T],
-                   origin='lower',
-                   aspect='auto')
-
-    axes[2].imshow(melspec_post[-1].transpose(0,1)[:,:T],
-                   origin='lower',
-                   aspect='auto')
-
+    for i, mel in enumerate(mels):
+        axes[i].imshow(mel[-1].transpose(0,1)[:,:T],
+                       origin='lower',
+                       aspect='auto')
     return fig
 
 def plot_alignments(alignments, mel_len=[0], seq_len=[0], att_type='mel_seq'):
@@ -68,8 +60,8 @@ class TTSWriter(SummaryWriter):
         self.add_scalar('{}_gate_loss'.format(phase), gate_loss, global_step)
         self.add_scalar('{}_guide_loss'.format(phase), guide_loss, global_step)
         
-    def add_specs(self, mel, mel_linear, mel_post, mel_len, global_step, phase):
-        mel_fig = plot_melspec(mel, mel_linear, mel_post, mel_len)
+    def add_specs(self, mels, mel_len, global_step, phase):
+        mel_fig = plot_melspec(mels, mel_len)
         self.add_figure('{}_melspec'.format(phase), mel_fig, global_step)
         
     def add_alignments(self, mel_align, seq_align, mel_seq_align, mel_len, seq_len, global_step, phase):

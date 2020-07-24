@@ -84,35 +84,29 @@ def mel2wave(spec, sample_rate, preemphasis, num_freq, frame_size_ms, frame_hop_
     x = scipy.signal.lfilter([1], [1, preemphasis], x)
     return x
 
+def seq2id(seq, symbol_to_id):
+        sequence=[symbol_to_id['^']]
+        sequence.extend([symbol_to_id[c] for c in text])
+        sequence.append(symbol_to_id['~'])
+        return sequence
 
-# def text2seq(text):
-#     sequence = []
-#     symbols_to_id = {s: i for i, s in enumerate(symbols)}
-#     curly = re.compile(r'(.*?)\{(.+?)\}(.*)')
-#     while len(text):
-#         m = curly.match(text)
-#         if not m:
-#             sequence += [symbols_to_id[s] for s in clean_text(text) if s is not '_' and s is not '~']
-#             break
-#         sequence += [symbols_to_id[s] for s in clean_text(m.group(1)) if s is not '_' and s is not '~']
-#         group2 = ['@' + s for s in m.group(2).split()]
-#         sequence += [symbols_to_id[s] for s in group2 if s is not '_' and s is not '~']
-#         text = m.group(3)    
-#     return sequence
+def text2seq(text, type='char'):
+    symbol_to_id = {s: i for i, s in enumerate(symbols)}
+    clean_char = clean_text(text.rstrip())
 
-# def seq2text(seq):
-#     id_to_symbols = {i: s for i, s in enumerate(symbols)}
-#     result = ''
-#     for id in sequence:
-#         if id in id_to_symbols:
-#             s = id_to_symbols[id]
-#             if len(s) > 1 and s[0] == '@':
-#                 s = '{%s}' % s[1:]
-#             result += s
+    if type == 'char':
+        seq = seq2id(clean_char, symbol_to_id)
+    else:
+        clean_phone = []
+        for s in g2p(clean_char.lower()):
+            if '@'+s in symbol_to_id:
+                clean_phone.append('@'+s)
+            else:
+                clean_phone.append(s)
+        seq = seq2id(clean_phone, symbol_to_id)
 
-#     return result.replace('}{', ' ')
-
-
+    return seq
+    
 def precompute_spectrograms(path, params):
     wav_path = os.path.join(path,'wavs')
     mel_path = os.path.join(path,'mels')
@@ -139,19 +133,13 @@ def precompute_char_phone(path):
     symbol_to_id = {s: i for i, s in enumerate(symbols)}
     g2p = G2p()
 
-    def text2seq(text, symbol_to_id):
-        sequence=[symbol_to_id['^']]
-        sequence.extend([symbol_to_id[c] for c in text])
-        sequence.append(symbol_to_id['~'])
-        return sequence
-
     data = {}
     with codecs.open(metadata_file, 'r', 'utf-8') as metadata:
         for line in metadata.readlines():
             id, _, text = line.split("|")
             id = re.sub(r'"', '', id)
             clean_char = clean_text(text.rstrip())
-            char_seq = text2seq(clean_char, symbol_to_id)
+            char_seq = seq2id(clean_char, symbol_to_id)
             clean_phone = []
 
             for s in g2p(clean_char.lower()):
@@ -159,7 +147,7 @@ def precompute_char_phone(path):
                     clean_phone.append('@'+s)
                 else:
                     clean_phone.append(s)
-            phone_seq = text2seq(clean_phone, symbol_to_id)
+            phone_seq = seq2id(clean_phone, symbol_to_id)
     
             char={'char':clean_char,
                   'char_seq':char_seq}

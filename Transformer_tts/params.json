@@ -15,7 +15,7 @@
     },
     "train":
     {
-	"batch_size":6,
+	"batch_size":10,
 	"epochs":200,
 	"lr":0.05,
 	"warmup_step":4000,
@@ -28,7 +28,7 @@
 	"hid_dim":256,
 	"kernel_size":5,
 	"num_conv": 3,
-	"dropout":0.5,
+	"dropout":0.2,
 	"pos_dropout":0.1,
 	"num_pos":1000
     },
@@ -37,7 +37,7 @@
 	"mel_dim":80,
 	"hid_dim":256,
 	"out_dim":256,
-	"dropout":0.5,
+	"dropout":0.2,
 	"pos_dropout":0.1,
 	"num_pos":10000
     },
@@ -47,7 +47,7 @@
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.1
+	"dropout":0.2
     },
     "decoder":
     {
@@ -55,7 +55,7 @@
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.1,
+	"dropout":0.2,
 	"num_mel":80
     },
     "postnet":
@@ -64,7 +64,7 @@
 	"hid_dim":256,
 	"kernel_size":5,
 	"num_conv":5,
-	"dropout":0.5
+	"dropout":0.2
     }
 }
 

@@ -15,7 +15,7 @@ def _get_activation_fn(activation):
     elif activation == "gelu":
         return F.gelu
     elif activation == "tanh":
-        return F.tanh
+        return torch.tanh
 
 class Linear(nn.Linear):
     def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
@@ -40,13 +40,14 @@ class Conv1dBatchNorm(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
+        self.act = activation
         if activation is not 'linear':
             self.activation = _get_activation_fn(activation)
 
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
-        if activateion is not 'linear':
+        if self.act is not 'linear':
             x = self.activation(x)
         out = self.dropout(x)
         return out 
@@ -106,7 +107,7 @@ class MultiHeadAttentionLayer(nn.Module):
         self.scale = torch.sqrt(torch.FloatTensor([self.head_dim])).to(device)
 
 
-    def forward(self, query, key, value, mask=None):
+    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
         '''The forward calculation of the neural network
 
         Args:
@@ -145,7 +146,7 @@ class MultiHeadAttentionLayer(nn.Module):
         energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale
 
         # energy = [batch_size, n_heads, query_len, key_len]
-        if mask is not None:
+        if attn_mask is not None:
             # masked_fill(mask, value) -> Tensor
             energy = energy.masked_fill(mask == 0, -inf)
         attention = torch.softmax(energy, dim=-1)
@@ -197,7 +198,6 @@ class PositionwiseFeedforwardLayer(nn.Module):
 
         return x
 
-
 class EncoderLayer(nn.Module):
     def __init__(self, hid_dim, n_heads, pf_dim, dropout, device):
         '''One Encoder Layer
@@ -225,12 +225,12 @@ class EncoderLayer(nn.Module):
 
         self.dropout_2 = nn.Dropout(dropout)
 
-    def forward(self, src, src_mask):
+    def forward(self, src, src_attn_mask=None, src_key_padding_mask=None):
 
         # src = [batch_size, src_len, hid_dim]
         # src_mask = [batch_size, src_len]
 
-        _src, _ = self.self_attention(src, src, src, src_mask)
+        _src, src_attention = self.self_attention(src, src, src, atten_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
 
         # dropout, residual connection and layer norm
         src = self.self_attn_layer_norm(src + self.dropout_1(_src))
@@ -245,7 +245,66 @@ class EncoderLayer(nn.Module):
 
         # src = [batch_size, src_len, hid_dim]
 
-        return src
+        return src, src_attention
+
+class DecoderLayer(nn.Module):
+    def __init__(self, hid_dim, n_heads, pf_dim, dropout, device):
+        '''One Encoder Layer
+
+        Args:
+          hid_dim: the dimension output from embedding for one word 
+          n_heads: how many heads is chosen for multiheads attention 
+          pd_dim: the hiding dimension in the positionwiseFeedforward 
+          dropout: the dropout rate
+          device: gpu or cpu 
+        '''
+        super(DecoderLayer,self).__init__()
+
+        self.self_attn_layer_norm = nn.LayerNorm(hid_dim)
+        self.enc_attn_layer_norm = nn.LayerNorm(hid_dim)
+        self.ff_layer_norm = nn.LayerNorm(hid_dim)
+        self.self_attention = MultiheadAttentionLayer(
+            hid_dim, n_heads, dropout, device)
+        self.encoder_attention = MultiHeadAttentionLayer(
+            hid_dim, n_heads, dropout, device)
+        self.positionwise_feedforward = PositionwiseFeedforwardLayer(
+            hid_dim, pf_dim, dropout)
+        self.dropout_1 = nn.Dropout(dropout)
+        self.dropout_2 = nn.Dropout(dropout)
+        self.dropout_3 = nn.Dropout(dropout)
+
+    def forward(self, trg, src, trg_attn_mask=None, src_attn_mask=None, trg_key_padding_mask=None, src_key_padding_mask=None):
+
+        # trg = [batch_size, trg_len, hid_dim]
+        # enc_src = [batch_size, src_len, hid_dim]
+        # trg_mask = [batch_size, trg_len]
+        # src_mask = [batch_size, src_len]
+
+        # self attention
+        _trg, trg_attention = self.self_attention(trg, trg, trg, attn_mask=trg_attn_mask)
+
+        trg = self.self_attn_layer_norm(trg + self.dropout_1(_trg))
+
+        # trg = [batch_size, trg_len, hid_dim]
+
+        # arg : key query value
+        _trg, trg_src_attention = self.encoder_attention(trg, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
+
+        # dropout, residual connection and layer norm
+        trg = self.enc_attn_layer_norm(trg + self.dropout_2(_trg))
+
+        # trg = [batch_size, trg_len, hid_dim]
+
+        # positionwise feedforward
+        _trg = self.positionwise_feedforward(trg)
+
+        # dropout, residual and layer norm
+        trg = self.ff_layer_norm(trg + self.dropout_3(_trg))
+
+        # trg = [batch_size, trg_len, hid_dim]
+        # attention = [batch_size, n_heads, trg_len, src_len]
+
+        return trg, trg_attention, trg_src_attention
 
 class TransformerEncoderLayer(nn.Module):
     def __init__(self,
@@ -274,67 +333,6 @@ class TransformerEncoderLayer(nn.Module):
         src = self.ff_norm2(src + self.dropout(src2))
 
         return src, src_align
-
-
-class DecoderLayer(nn.Module):
-    def __init__(self, hid_dim, n_heads, pf_dim, dropout, device):
-        '''One Encoder Layer
-
-        Args:
-          hid_dim: the dimension output from embedding for one word 
-          n_heads: how many heads is chosen for multiheads attention 
-          pd_dim: the hiding dimension in the positionwiseFeedforward 
-          dropout: the dropout rate
-          device: gpu or cpu 
-        '''
-        super(DecoderLayer,self).__init__()
-
-        self.self_attn_layer_norm = nn.LayerNorm(hid_dim)
-        self.enc_attn_layer_norm = nn.LayerNorm(hid_dim)
-        self.ff_layer_norm = nn.LayerNorm(hid_dim)
-        self.self_attention = MultiheadAttentionLayer(
-            hid_dim, n_heads, dropout, device)
-        self.encoder_attention = MultiHeadAttentionLayer(
-            hid_dim, n_heads, dropout, device)
-        self.positionwise_feedforward = PositionwiseFeedforwardLayer(
-            hid_dim, pf_dim, dropout)
-        self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
-        self.dropout_3 = nn.Dropout(dropout)
-
-    def forward(self, trg, enc_src, trg_mask, src_mask):
-
-        # trg = [batch_size, trg_len, hid_dim]
-        # enc_src = [batch_size, src_len, hid_dim]
-        # trg_mask = [batch_size, trg_len]
-        # src_mask = [batch_size, src_len]
-
-        # self attention
-        _trg, _ = self.self_attention(trg, trg, trg, trg_mask)
-
-        trg = self.self_attn_layer_norm(trg + self.dropout_1(_trg))
-
-        # trg = [batch_size, trg_len, hid_dim]
-
-        # arg : key query value
-        _trg, attention = self.encoder_attention(
-            trg, enc_src, enc_src, src_mask)
-
-        # dropout, residual connection and layer norm
-        trg = self.enc_attn_layer_norm(trg + self.dropout_2(_trg))
-
-        # trg = [batch_size, trg_len, hid_dim]
-
-        # positionwise feedforward
-        _trg = self.positionwise_feedforward(trg)
-
-        # dropout, residual and layer norm
-        trg = self.ff_layer_norm(trg + self.dropout_3(_trg))
-
-        # trg = [batch_size, trg_len, hid_dim]
-        # attention = [batch_size, n_heads, trg_len, src_len]
-
-        return trg, attention
 
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, hid_dim, n_heads, pf_dim, dropout=0.1, activation="relu"):

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 from text_utils import symbols
-# from data_utils import text2seq
+from data_utils import text2seq
 
 import pdb
 
@@ -90,11 +90,67 @@ class DecoderPrenet(nn.Module):
         x = x + x_pos
         return x
 
-
-
 class Encoder(nn.Module):
     def __init__(self, params):
         super(Encoder, self).__init__()
+        
+        hid_dim = params['hid_dim']
+        n_layers = params['num_layers']
+        n_heads = params['num_heads']
+        pf_dim = params['pf_dim']
+        device = params['device']
+        dropout = params['dropout']
+
+        self.layers = nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
+                                     for _ in range(n_layers)])
+
+    def forward(self, src, src_mask):
+        src_aligns = []
+        for layer in self.layers:
+            src, src_align = layer(src, src_mask)
+            src_aligns.append(src_align)
+            
+        return src, src_align
+
+
+class Decoder(nn.Module):
+    def __init__(self, params):
+        super(Decoder, self).__init__()
+
+        hid_dim = params['hid_dim']
+        n_layers = params['num_layers']
+        n_heads = params['num_heads']
+        pf_dim = params['pf_dim']
+        device = params['device']
+        dropout = params['dropout']
+        num_mel = params['num_mel']
+
+        self.device = device 
+
+        self.layers = nn.ModuleList([DecoderLayer(hid_dim,
+                                                  n_heads,
+                                                  pf_dim,
+                                                  dropout,
+                                                  device)
+                                     for _ in range(n_layers)])
+
+        self.mel_linear = LinearWNorm(hid_dim, num_mel)
+        self.stop_linear = LinearWNorm(hid_dim, 1, w_init_gain='sigmoid')
+
+    def forward(self, trg, enc_src, trg_mask, src_mask):
+
+        for layer in self.layers:
+            trg, _ = layer(trg, enc_src, trg_mask, src_mask)
+
+        stop_tokens = self.stop_linear(trg)
+        mel_out = self.mel_linear(trg)
+        
+        return mel_out, stop_tokens
+
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, params):
+        super(TransformerEncoder, self).__init__()
         
         hid_dim = params['hid_dim']
         n_layers = params['num_layers']
@@ -120,9 +176,9 @@ class Encoder(nn.Module):
         return src, src_aligns 
 
 
-class Decoder(nn.Module):
+class TransformerDecoder(nn.Module):
     def __init__(self, params):
-        super(Decoder, self).__init__()
+        super(TransformerDecoder, self).__init__()
 
         hid_dim = params['hid_dim']
         n_layers = params['num_layers']
@@ -153,7 +209,6 @@ class Decoder(nn.Module):
             tgt_aligns.append(tgt_align.unsqueeze(1))
             tgt_src_aligns.append(tgt_src_align.unsqueeze(1))
 
-        
         tgt_aligns = torch.cat(tgt_aligns, 1)
         tgt_src_aligns = torch.cat(tgt_src_aligns, 1)
 
@@ -205,13 +260,13 @@ class Postnet(nn.Module):
                                         dropout=dropout)
 
     def forward(self, x):
-        _x = x.transpose(1,2)
-        _x = self.first_cov(_x)
+        x2 = x.transpose(1,2)
+        x2 = self.first_cov(x2)
         for layer in self.convolutions:
-            _x = layer(_x)
-        _x = self.last_cov(_x)
-        _x = _x.transpose(1,2)
-        x = x + _x
+            x2 = layer(x2)
+        x2 = self.last_cov(x2)
+        x2 = x2.transpose(1,2)
+        x = x + x2
         return x
 
 
@@ -232,8 +287,8 @@ class Model(nn.Module):
 
         self.encoder_prenet = EncoderPrenet(enprenet_params)
         self.decoder_prenet = DecoderPrenet(deprenet_params)
-        self.encoder = Encoder(encoder_params)
-        self.decoder = Decoder(decoder_params)
+        self.encoder = TransformerEncoder(encoder_params)
+        self.decoder = TransformerDecoder(decoder_params)
         self.postnet = Postnet(postnet_params)
         self.loss_fn = TSSLoss(params)
 
@@ -246,14 +301,17 @@ class Model(nn.Module):
         mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
-    def make_attn_mask(self, mel):
+    def make_attn_mask(self, mel, type='inf'):
         T = mel.size(1)
         diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
-        diag_mask[diag_mask == 0] = -float('inf')
+        if type == 'inf':
+            diag_mask[diag_mask == 0] = -float('inf')
+        else:
+            diag_mask[diag_mask == 0] = -1e9
         diag_mask[diag_mask == 1] = 0
         return diag_mask
 
-    def output(self, mel, seq, mel_len, seq_len):
+    def output(self, mel, seq, mel_len, seq_len, type='inf'):
 
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
@@ -261,7 +319,7 @@ class Model(nn.Module):
 
         mel_key_mask = self.make_key_mask(mel_len)
 
-        mel_attn_mask = self.make_attn_mask(mel)
+        mel_attn_mask = self.make_attn_mask(mel, type=type)
 
         seq = self.encoder_prenet(seq)
 
@@ -287,46 +345,30 @@ class Model(nn.Module):
                                                                              (mel, gate, mel_key_mask, mel_len, seq_len),
                                                                              (mel_align, seq_align, mel_seq_align))
 
-
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
 
-    def inference(self, text='', input=None, max_len=1024):
-        pass
+    def inference(self, seq, seq_len, max_len=2000, type='no'):
 
-        # if input is not None:
-        #     mel_org, seq, mel_len_org, seq_len, gate = input 
-        # else:
-        #     label = text2seq(text)
-        
-        #     seq = [torch.LongTensor(label)].to(device)
+        mel = torch.zeros(1, max_len,self.params['data']['num_mel']).to(self.device)
+        mel_len = torch.tensor([max_len]).to(self.device)
 
-        #     seq_len = [len(label)].to(device)
-        
-        # mel = [text.new_zeros(1, max_len, self.params['data']['num_mel']).type(torch.LongTensor).to(device)]
-
-        # mel_len = [max_len]
-
-        # stop = []
-        # mel_loss, gate_loss, guide_loss = 0, 0, 0
+        stop = []
   
-        # for i in range(max_len):
-        #     mel_linear, mel_out, stop_tokens, _, _, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
-        #     stop.append(torch.sigmoid(stop_tokens[:,i]).item())
+        for i in range(max_len):
+            _, mel_out, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len, type=type)
+            stop.append(torch.sigmoid(stop_tokens[:,i]).item())
 
-        #     if i < max_len -1:
-        #         mel[:,i+1,:]=mel_out[:,i,:]
+            if i < max_len -1:
+                mel[:,i+1,:]=mel_out[:,i,:]
 
-        #     if stop[-1]>0.8:
-        #         break
-        
-        # if input is not None:
-        #     mel_loss, _, _, gate_loss, guide_loss = self.loss_fn((mel, mel, stop),
-        #                                                          (mel_org, gate, mel_key_mask, mel_org_len, seq_len),
-        #                                                          mel_seq_align)
+            if stop[-1]>0.8:
+                break
+            
+        mel_out = mel[:,:len(stop),:]
 
-        # mel = mel[:,:len(stop),:]
+        return mel_out
 
-        # return mel, stop, mel_loss, gate_loss, guide_loss
+
 
 class TSSLoss(nn.Module):
     def __init__(self, params):
@@ -357,10 +399,12 @@ class TSSLoss(nn.Module):
 
         # guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
         
-        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
+        return mel_linear_loss, mel_post_loss, gate_loss , guide_loss
     
     def guide_loss(self, alignments, seq_len, mel_len):
 
+        
+        
         batch, num_layers, T, L = alignments.shape
 
         cuda_check = alignments.is_cuda
@@ -371,12 +415,11 @@ class TSSLoss(nn.Module):
 
         W = alignments.new_zeros(batch, T, L)
         mask = alignments.new_zeros(batch, T, L)
-
         for i, (t, l) in enumerate(zip(mel_len, seq_len)):
-            mel_seq = (torch.arange(t).to(torch.float32).unsqueeze(-1)/t).to(device)
-            text_seq = (torch.arange(l).to(torch.float32).unsqueeze(0)/l).to(device)
+            mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(device)
+            text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(device)
             x = torch.pow(mel_seq-text_seq, 2)
-            W[i, :t, :l] += (1-torch.exp(-3.125*x)).to(device)
+            W[i, :t, :l] += (1-torch.exp(-100*x)).to(device)
             mask[i, :t, :l] = 1
 
         applied_align = alignments[:,-2:]
