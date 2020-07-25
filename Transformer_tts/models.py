@@ -4,7 +4,9 @@ import torch.nn.functional as F
 
 
 from text_utils import symbols
-from data_utils import text2seq
+from data_utils import text2seq, mel2wave
+import sounddevice as sd
+import soundfile as sf
 
 import pdb
 
@@ -43,9 +45,9 @@ class EncoderPrenet(nn.Module):
                                activation='relu',
                                dropout=dropout)
 
-        # self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
+        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
-        self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
+        self.projection = Linear(emb_dim, hid_dim, bias=False, w_init_gain="linear")
 
         self.pos_dropout = nn.Dropout(pos_dropout)
 
@@ -54,11 +56,11 @@ class EncoderPrenet(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        # x = x.transpose(1, 2)
-        # x = self.first_conv(x)
-        # for conv in self.convolutions:
-        #     x = conv(x)
-        # x = x.transpose(1, 2)
+        x = x.transpose(1, 2)
+        x = self.first_conv(x)
+        for conv in self.convolutions:
+            x = conv(x)
+        x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -80,7 +82,7 @@ class DecoderPrenet(nn.Module):
             Linear(input_dim, hid_dim, w_init_gain="relu"),
             Linear(hid_dim, hid_dim, w_init_gain="relu"))
 
-        self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
+        self.projection = Linear(hid_dim, out_dim, bias=False, w_init_gain="linear")
         
         self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
 
@@ -173,6 +175,7 @@ class TransformerEncoder(nn.Module):
     def forward(self, src, src_key_padding_mask):
         src_aligns = []
         ## change to the correct input shape for MultiheadAttention [seq_len, batch, emb_dim]
+        ## the src_aligns checked 
         src = src.transpose(0,1)
         for layer in self.layers:
             src, src_align = layer(src, src_key_padding_mask=src_key_padding_mask)
@@ -319,6 +322,15 @@ class Model(nn.Module):
 
     def output(self, mel, seq, mel_len, seq_len, type='inf'):
 
+        # print(seq)
+        # params = self.params['data']
+        
+        # waveform = mel2wave(mel[0].squeeze(0).transpose(0,1).cpu().numpy(), params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_iter'])
+
+        # sd.play(waveform, 16000)
+        # status = sd.wait()  
+
+        # pdb.set_trace()
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
         seq_key_mask = self.make_key_mask(seq_len)
@@ -354,7 +366,7 @@ class Model(nn.Module):
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
 
     def inference(self, seq, seq_len, max_len=2000, use_post=True, type='no'):
-
+     
         mel = torch.zeros(1, max_len,self.params['data']['num_mel']).to(self.device)
         mel_len = torch.tensor([max_len]).to(self.device)
 
@@ -379,12 +391,12 @@ class Model(nn.Module):
         return mel_out
 
 
-
 class TSSLoss(nn.Module):
     def __init__(self, params):
         super(TSSLoss, self).__init__()
         
     def forward(self, output, input, alignments):
+        
         mel_linear, mel_post, gate_out = output
         mel_target, gate_target, mel_mask, mel_len, seq_len = input
         mel_mask = ~mel_mask
@@ -409,11 +421,9 @@ class TSSLoss(nn.Module):
 
         # guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
         
-        return mel_linear_loss, mel_post_loss, gate_loss , guide_loss
+        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     
     def guide_loss(self, alignments, seq_len, mel_len):
-
-        
         
         batch, num_layers, T, L = alignments.shape
 
@@ -429,7 +439,7 @@ class TSSLoss(nn.Module):
             mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(device)
             text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(device)
             x = torch.pow(mel_seq-text_seq, 2)
-            W[i, :t, :l] += (1-torch.exp(-100*x)).to(device)
+            W[i, :t, :l] += (1-torch.exp(-3.125*x)).to(device)
             mask[i, :t, :l] = 1
 
         applied_align = alignments[:,-2:]

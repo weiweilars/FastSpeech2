@@ -79,6 +79,8 @@ def data_mel_processing(data, params):
         mel_len.append(melspec.shape[1])
         mel = torch.tensor(melspec).squeeze(0).transpose(0,1)
         mels.append(mel)
+        # print(char)
+        # print(phone)
         gate = torch.ones(melspec.shape[1])
         gate[-1] = 0
         gates.append(gate)
@@ -86,6 +88,7 @@ def data_mel_processing(data, params):
             label = char_seq
         else:
             label = phone_seq
+        # print(label)
         seq_len.append(len(label))
         seqs.append(torch.LongTensor(label))
     mels = pad_sequence(mels, batch_first=True)

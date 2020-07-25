@@ -73,7 +73,10 @@ def main(model_path, model_name, log_path):
                                   **kwargs)
 
     model = Model(params, device).to(device)
-    print(model)
+    # print(model)
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         print("parameter {} is {}".format(name, param.shape))
     print('Num Model Parameters', sum([param.nelement() for param in model.parameters()]))
     epochs = train_params['epochs']
     writer = get_writer(model_path, log_path)
@@ -83,7 +86,7 @@ def main(model_path, model_name, log_path):
                                  eps = 1e-09)
     
     iteration = 0
-
+    best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
     model_file = os.path.join(model_path, 'model.pt')
     if os.path.isfile(model_file):
         file = torch.load(model_file)

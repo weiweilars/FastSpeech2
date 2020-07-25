@@ -15,12 +15,12 @@
     },
     "train":
     {
-	"batch_size":10,
+	"batch_size":2,
 	"epochs":200,
 	"lr":0.05,
 	"warmup_step":4000,
 	"grad_clip_thresh":1.0,
-	"accumulation":2
+	"accumulation":1
     },
     "encoderPrenet":
     {
@@ -46,7 +46,7 @@
 	"num_layers":6,
 	"hid_dim":256,
 	"pf_dim":1024,
-	"num_heads":4,
+	"num_heads":8,
 	"dropout":0.2
     },
     "decoder":
@@ -54,7 +54,7 @@
 	"num_layers":6,
 	"hid_dim":256,
 	"pf_dim":1024,
-	"num_heads":4,
+	"num_heads":8,
 	"dropout":0.2,
 	"num_mel":80
     },
