@@ -23,12 +23,12 @@ class Linear(nn.Linear):
         nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
 
 class Conv1d(nn.Conv1d):
-    def __init__(self, in_channels, out_channels,kernel_size, stride=1, padding=None, dilation=1, bias=True, w_init_gain="linear"):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=None, dilation=1, bias=True, padding_mode='zeros', w_init_gain="linear"):
         if padding is None:
             assert(kernel_size % 2 == 1)
             padding = int(dilation * (kernel_size - 1) / 2)
-        super(Conv1d, self).__init__(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias)
-        nn.init.xavier_normal_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
+        super(Conv1d, self).__init__(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, padding_mode=padding_mode)
+        nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
 
         
 class Conv1dBatchNorm(nn.Module):
@@ -144,9 +144,16 @@ class MultiHeadAttentionLayer(nn.Module):
         energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale
 
         # energy = [batch_size, n_heads, query_len, key_len]
-        if attn_mask is not None:
+        if key_padding_mask is not None:
             # masked_fill(mask, value) -> Tensor
-            energy = energy.masked_fill(mask == 0, -inf)
+            energy.masked_fill_(key_padding_mask.unsqueeze(1).unsqueeze(2), float('-inf'))
+
+        if attn_mask is not None:
+            if self.training:
+                energy.masked_fill_(attn_mask, float('-inf'))
+            else:
+                energy.masked_fill_(attn_mask, -1e10)
+                
         attention = torch.softmax(energy, dim=-1)
 
         # attentions = [batch_size, n_heads, query_len, key_len]
@@ -163,7 +170,7 @@ class MultiHeadAttentionLayer(nn.Module):
 
         # x = [batch_size, query_len, hid_dim]
 
-        return x, attention
+        return x, attention.sum(dim=1)/self.n_heads
 
 
 class PositionwiseFeedforwardLayer(nn.Module):
@@ -228,7 +235,7 @@ class EncoderLayer(nn.Module):
         # src = [batch_size, src_len, hid_dim]
         # src_mask = [batch_size, src_len]
 
-        _src, src_attention = self.self_attention(src, src, src, atten_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
+        _src, src_attention = self.self_attention(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
 
         # dropout, residual connection and layer norm
         src = self.self_attn_layer_norm(src + self.dropout_1(_src))
@@ -261,7 +268,7 @@ class DecoderLayer(nn.Module):
         self.self_attn_layer_norm = nn.LayerNorm(hid_dim)
         self.enc_attn_layer_norm = nn.LayerNorm(hid_dim)
         self.ff_layer_norm = nn.LayerNorm(hid_dim)
-        self.self_attention = MultiheadAttentionLayer(
+        self.self_attention = MultiHeadAttentionLayer(
             hid_dim, n_heads, dropout, device)
         self.encoder_attention = MultiHeadAttentionLayer(
             hid_dim, n_heads, dropout, device)
@@ -271,7 +278,7 @@ class DecoderLayer(nn.Module):
         self.dropout_2 = nn.Dropout(dropout)
         self.dropout_3 = nn.Dropout(dropout)
 
-    def forward(self, trg, src, trg_attn_mask=None, src_attn_mask=None, trg_key_padding_mask=None, src_key_padding_mask=None):
+    def forward(self, tgt, src, tgt_attn_mask=None, src_attn_mask=None, tgt_key_padding_mask=None, src_key_padding_mask=None):
 
         # trg = [batch_size, trg_len, hid_dim]
         # enc_src = [batch_size, src_len, hid_dim]
@@ -279,30 +286,30 @@ class DecoderLayer(nn.Module):
         # src_mask = [batch_size, src_len]
 
         # self attention
-        _trg, trg_attention = self.self_attention(trg, trg, trg, attn_mask=trg_attn_mask)
+        _tgt, tgt_attention = self.self_attention(tgt, tgt, tgt, attn_mask=tgt_attn_mask)
 
-        trg = self.self_attn_layer_norm(trg + self.dropout_1(_trg))
+        tgt = self.self_attn_layer_norm(tgt + self.dropout_1(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
 
         # arg : key query value
-        _trg, trg_src_attention = self.encoder_attention(trg, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
+        _tgt, tgt_src_attention = self.encoder_attention(tgt, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
 
         # dropout, residual connection and layer norm
-        trg = self.enc_attn_layer_norm(trg + self.dropout_2(_trg))
+        tgt = self.enc_attn_layer_norm(tgt + self.dropout_2(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
 
         # positionwise feedforward
-        _trg = self.positionwise_feedforward(trg)
+        _tgt = self.positionwise_feedforward(tgt)
 
         # dropout, residual and layer norm
-        trg = self.ff_layer_norm(trg + self.dropout_3(_trg))
+        tgt = self.ff_layer_norm(tgt + self.dropout_3(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
         # attention = [batch_size, n_heads, trg_len, src_len]
 
-        return trg, trg_attention, trg_src_attention
+        return tgt, tgt_attention, tgt_src_attention
 
 class TransformerEncoderLayer(nn.Module):
     def __init__(self,

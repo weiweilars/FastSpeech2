@@ -20,20 +20,20 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
     model.train()
     data_len = len(train_loader.dataset)
     for batch_idx, _data in enumerate(train_loader):
+        optimizer.zero_grad()
+        iteration += 1 
+        adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
+        
         mel, seq, gate, mel_pos, seq_pos = _data 
         mel_linear_loss,mel_post_loss,gate_loss, guide_loss = model(mel.to(device),
                                                                     seq.to(device),
                                                                     mel_pos.to(device),
                                                                     seq_pos.to(device),
                                                                     gate.to(device))
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)
-        
-        #loss = loss+total_loss.item()
-        iteration +=1 
-        adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
-        optimizer.zero_grad()
+        total_loss = mel_linear_loss+mel_post_loss+gate_loss+guide_loss
         total_loss.backward()
-        #nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
+        #loss = loss+total_loss.item()
+        nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
         optimizer.step()
         writer.add_losses(mel_linear_loss.item(),
                           mel_post_loss.item(),
@@ -42,7 +42,7 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                           iteration//params['accumulation'], 'Train')
             
         if batch_idx % 100 == 0 or batch_idx == data_len:
-            print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\t Mel_post Loss: {:.6f}\t Gate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
+            print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
                 iteration, batch_idx * len(mel), data_len,
                 100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item(), guide_loss.item()))
             for param_group in optimizer.param_groups:
@@ -62,7 +62,7 @@ def validate(model, device, val_loader, iteration, writer, params):
                                                                                                   mel_len.to(device),
                                                                                                   seq_len.to(device))
 
-            mel_linear_loss,mel_post_loss,gate_loss, guide_loss = model(mel.to(device),
+            mel_linear_loss, mel_post_loss, gate_loss, guide_loss = model(mel.to(device),
                                                                     seq.to(device),
                                                                     mel_len.to(device),
                                                                     seq_len.to(device),
@@ -94,7 +94,7 @@ def validate(model, device, val_loader, iteration, writer, params):
                       guide_loss.item(),
                       iteration//params['accumulation'], 'Validation')
     
-    writer.add_specs((mel.detach().cpu(),mel_linear.detach().cpu(),mel_post.detach().cpu()),
+    writer.add_specs((mel.detach().cpu(),mel_linear.detach().cpu(), mel_post.detach().cpu()),
                      mel_len.detach().cpu(),
                      iteration//params['accumulation'], 'Validation')
     

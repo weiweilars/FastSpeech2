@@ -52,8 +52,6 @@ def main(model_path, model_name, log_path):
                            url='https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                            download=True)
 
-    
-
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [12000, 1100])
 
     train_loader = data.DataLoader(dataset=train_dataset,
@@ -86,7 +84,6 @@ def main(model_path, model_name, log_path):
                                  eps = 1e-09)
     
     iteration = 0
-    best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
     model_file = os.path.join(model_path, 'model.pt')
     if os.path.isfile(model_file):
         file = torch.load(model_file)
