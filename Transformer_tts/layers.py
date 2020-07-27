@@ -75,7 +75,7 @@ class PosEmbeddingLayer(nn.Module):
 
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, hid_dim, n_heads, dropout, device):
+    def __init__(self, hid_dim, n_heads, device='cpu', dropout=0.1, bias=False):
         '''The class to calculate the mutltihead attentions 
 
         Args: 
@@ -94,9 +94,9 @@ class MultiHeadAttentionLayer(nn.Module):
         self.n_heads = n_heads
         self.head_dim = hid_dim // n_heads
 
-        self.fc_q = Linear(hid_dim, hid_dim)
-        self.fc_k = Linear(hid_dim, hid_dim)
-        self.fc_v = Linear(hid_dim, hid_dim)
+        self.fc_q = Linear(hid_dim, hid_dim, bias=bias)
+        self.fc_k = Linear(hid_dim, hid_dim, bias=bias)
+        self.fc_v = Linear(hid_dim, hid_dim, bias=bias)
 
         self.fc_o = Linear(hid_dim, hid_dim)
 
@@ -115,62 +115,74 @@ class MultiHeadAttentionLayer(nn.Module):
           mask: padding is masked by 0, others are 1 
         '''
 
+        
         batch_size = query.shape[0]
+        Q_len = query.shape[1]
+        K_len = key.shape[1]
 
         # query = [batch_size, query_len, hid_dim]
         # key = [batch_size, key_len, hid_dim]
         # value = [batch_size, value_len, hid_dim]
-
         Q = self.fc_q(query)
+        Q = Q.view(batch_size, -1, self.n_heads, self.head_dim)
         K = self.fc_k(key)
+        K = K.view(batch_size, -1, self.n_heads, self.head_dim)
         V = self.fc_v(value)
+        V = V.view(batch_size, -1, self.n_heads, self.head_dim)
 
-        # Q = [batch_size, query_len, hid_dim]
-        # K = [batch_size, key_len, hid_dim]
-        # V = [batch_size, value_len, hid_dim]
+        # Q = [batch_size, query_len, n_heads, head_dim]
+        # K = [batch_size, key_len, n_heads, head_dim]
+        # V = [batch_size, value_len, n_heads, head_dim]
 
-        # -1 calculate the dimension given other dimension
-        Q = Q.view(batch_size, -1, self.n_heads,
-                   self.head_dim).permute([0, 2, 1, 3])
-        K = K.view(batch_size, -1, self.n_heads,
-                   self.head_dim).permute([0, 2, 1, 3])
-        V = V.view(batch_size, -1, self.n_heads,
-                   self.head_dim).permute([0, 2, 1, 3])
+        Q = Q.transpose(1,2).contiguous()
+        Q = Q.view(batch_size*self.n_heads, -1, self.head_dim)
+        K = K.transpose(1,2).contiguous()
+        K = K.view(batch_size*self.n_heads, -1, self.head_dim)
+        V = V.transpose(1,2).contiguous()
+        V = V.view(batch_size*self.n_heads, -1, self.head_dim)
 
-        # Q = [batch size, n heads, query len, head dim]
-        # K = [batch size, n heads, key len, head dim]
-        # V = [batch size, n heads, value len, head dim]
+        # Q = [batch size*n_heads, query len, head dim]
+        # K = [batch size*n_heads, key len, head dim]
+        # V = [batch size*n_heads, value len, head dim]
 
-        energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale
-
-        # energy = [batch_size, n_heads, query_len, key_len]
-        if key_padding_mask is not None:
-            # masked_fill(mask, value) -> Tensor
-            energy.masked_fill_(key_padding_mask.unsqueeze(1).unsqueeze(2), float('-inf'))
+        Q = Q/(self.scale ** 1/4)
+        K = K/(self.scale ** 1/4)
+        
+        energy = torch.bmm(Q, K.transpose(1,2))
 
         if attn_mask is not None:
             if self.training:
                 energy.masked_fill_(attn_mask, float('-inf'))
             else:
                 energy.masked_fill_(attn_mask, -1e10)
+
+        # energy = [batch_size*n_heads, query_len, key_len]
+        if key_padding_mask is not None:
+            # masked_fill(mask, value) -> Tensor
+            energy = energy.view(batch_size, self.n_heads, Q_len, K_len)
+            energy.masked_fill_(key_padding_mask.unsqueeze(1).unsqueeze(2), float('-inf'))
+            energy = energy.view(batch_size*self.n_heads, Q_len, K_len)
                 
         attention = torch.softmax(energy, dim=-1)
+        attention = self.dropout(attention)
+        # attentions = [batch_size*n_heads, query_len, key_len]
 
-        # attentions = [batch_size, n_heads, query_len, key_len]
+        x = torch.bmm(attention, V)
+        # x = [batch_size*n_heads, query_len, head_dim]
 
-        x = torch.matmul(self.dropout(attention), V)
+        attention = attention.view(batch_size, self.n_heads, Q_len, K_len)
+        # attention = [batch_size, n_heads, query_len, key_len]
 
-        # x = [batch_size, n_heads, query_len, head_dim]
-
+        x = x.view(batch_size, self.n_heads, -1, self.head_dim)
         x = x.transpose(1, 2).contiguous()
         x = x.view(batch_size, -1, self.hid_dim)
-
         # x = [batch_size, query_len, hid_dim]
+
+        
         x = self.fc_o(x)
 
         # x = [batch_size, query_len, hid_dim]
-
-        return x, attention.sum(dim=1)/self.n_heads
+        return x, attention
 
 
 class PositionwiseFeedforwardLayer(nn.Module):
@@ -370,3 +382,45 @@ class TransformerDecoderLayer(nn.Module):
         
         
         
+if __name__ == "__main__":
+
+    def make_key_mask(pos):
+        # true will be -inf
+        # false will be same
+        max_len = torch.max(pos).item()
+        ids = (torch.arange(0, max_len))
+        mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
+        return mask
+
+    def make_attn_mask(mel, training=True):
+        # true will be -inf
+        # false will be same
+        T = mel.size(1)
+        diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
+        # if training:
+        #     diag_mask[diag_mask == 0] = -float('inf')
+        # else:
+        #     diag_mask[diag_mask == 0] = -1e9
+        # diag_mask[diag_mask == 1] = 0
+        diag_mask = ~diag_mask.to(torch.bool)
+        return diag_mask
+
+    test = torch.rand((2,3,8))
+
+    test_2 = torch.rand((2,4,8))
+
+    test_fn = MultiHeadAttentionLayer(8, 4)
+
+    attn_mask = make_attn_mask(test)
+
+    pos = torch.tensor([2,3])
+    key_mask = make_key_mask(pos)
+
+
+    output, atten = test_fn(test_2, test, test, key_padding_mask=key_mask)
+
+    print(test_2.shape)
+    print(output.shape)
+    print(atten.shape)
+    
+    

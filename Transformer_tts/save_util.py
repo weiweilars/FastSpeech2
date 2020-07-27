@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 
 def plot_melspec(mels, mel_lengths):
-    fig, axes = plt.subplots(len(mels), 1, figsize=(8*len(mels), 30))
+    fig, axes = plt.subplots(len(mels), 1, figsize=(20, 10*len(mels)))
     T = mel_lengths[-1]
     for i, mel in enumerate(mels):
         axes[i].imshow(mel[-1].transpose(0,1)[:,:T],
@@ -15,25 +15,42 @@ def plot_melspec(mels, mel_lengths):
     return fig
 
 def plot_alignments(alignments, mel_len=[0], seq_len=[0], att_type='mel_seq'):
+    
+    if len(alignments.shape) == 4:
+        alignments.unsqueeze_(2)
+    
     n_layers = alignments.size(1)
-    fig, axes = plt.subplots(n_layers, 1, figsize=(10,10*n_layers))
+    n_heads = alignments.size(2)
+    fig, axes = plt.subplots(n_layers, n_heads, figsize=(5*n_heads,5*n_layers))
     L, T = seq_len[-1], mel_len[-1]
     
     for layer in range(n_layers):
-        if att_type=='seq':
-            align = alignments[-1, layer].contiguous()
-            axes[layer].imshow(align[:L, :L], aspect='auto')
-            axes[layer].xaxis.tick_top()
+        for head in range(n_heads):
+            if att_type=='seq':
+                align = alignments[-1, layer, head].contiguous()
+                if n_heads == 1:
+                    axes[layer].imshow(align[:L, :L], aspect='auto')
+                    axes[layer].xaxis.tick_top()
+                else:
+                    axes[layer, head].imshow(align[:L, :L], aspect='auto')
+                    axes[layer, head].xaxis.tick_top()
 
-        elif att_type=='mel':
-            align = alignments[-1, layer].contiguous()
-            axes[layer].imshow(align[:T, :T], aspect='auto')
-            axes[layer].xaxis.tick_top()
+            elif att_type=='mel':
+                align = alignments[-1, layer, head].contiguous()
+                if n_heads==1:
+                    axes[layer].imshow(align[:T, :T], aspect='auto')
+                    axes[layer].xaxis.tick_top()
+                else:
+                    axes[layer, head].imshow(align[:T, :T], aspect='auto')
+                    axes[layer, head].xaxis.tick_top()
 
-        elif att_type=='mel_seq':
-            align = alignments[-1, layer].transpose(0,1).contiguous()
-            axes[layer].imshow(align[:L, :T], origin='lower', aspect='auto')
-        
+            elif att_type=='mel_seq':
+                align = alignments[-1, layer, head].transpose(0,1).contiguous()
+                if n_heads==1:
+                    axes[layer].imshow(align[:L, :T], aspect='auto')
+                else:
+                    axes[layer, head].imshow(align[:L, :T], aspect='auto')
+ 
     return fig
 
 def plot_gate(gate_out):
@@ -54,11 +71,9 @@ class TTSWriter(SummaryWriter):
     def __init__(self, log_dir):
         super(TTSWriter, self).__init__(log_dir)
         
-    def add_losses(self, mel_linear_loss, mel_post_loss, gate_loss, guide_loss, global_step, phase):
-        self.add_scalar('{}_mel_linear_loss'.format(phase), mel_linear_loss, global_step)
-        self.add_scalar('{}_mel_post_loss'.format(phase), mel_post_loss, global_step)
-        self.add_scalar('{}_gate_loss'.format(phase), gate_loss, global_step)
-        self.add_scalar('{}_guide_loss'.format(phase), guide_loss, global_step)
+    def add_losses(self, mels, global_step, phase):
+        for name, value in mels.items():
+            self.add_scalar('{}_{}'.format(phase, name), value, global_step)
         
     def add_specs(self, mels, mel_len, global_step, phase):
         mel_fig = plot_melspec(mels, mel_len)

@@ -30,17 +30,18 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                                                                     mel_pos.to(device),
                                                                     seq_pos.to(device),
                                                                     gate.to(device))
+        
         total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
             nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
             optimizer.step()
-            writer.add_losses(mel_linear_loss.item(),
-                              mel_post_loss.item(),
-                              gate_loss.item(),
-                              guide_loss.item(),
-                              iteration//params['accumulation'], 'Train')
+            losses = {"mel_linear_loss":mel_linear_loss.item(),
+                      "mel_post_loss":mel_post_loss.item(),
+                      "gate_loss":gate_loss.item(),
+                      "guide_loss":guide_loss.item()}
+            writer.add_losses(losses, iteration//params['accumulation'], 'Train')
             optimizer.zero_grad()
             
         if batch_idx % 100 == 0 or batch_idx == data_len:
@@ -87,18 +88,19 @@ def validate(model, device, val_loader, iteration, writer, params):
 
     mel_inf = model.inference(seq.to(device), seq_len.to(device))
 
-    writer.add_specs((mel.detach().cpu(), mel_inf.detach().cpu()),
+    mels = (mel.detach().cpu(), mel_inf.detach().cpu())
+    writer.add_specs(mels,
                      mel_len.detach().cpu(),
                      iteration//params['accumulation'], 'Validation_without_mel')
 
-        
-    writer.add_losses(mel_linear_loss.item(),
-                      mel_post_loss.item(),
-                      gate_loss.item(),
-                      guide_loss.item(),
-                      iteration//params['accumulation'], 'Validation')
-    
-    writer.add_specs((mel.detach().cpu(),mel_linear.detach().cpu(), mel_post.detach().cpu()),
+    losses = {"mel_linear_loss":mel_linear_loss.item(),
+              "mel_post_loss":mel_post_loss.item(),
+              "gate_loss":gate_loss.item(),
+              "guide_loss":guide_loss.item()}
+    writer.add_losses(losses,iteration//params['accumulation'], 'Validation')
+
+    mels = (mel.detach().cpu(),mel_linear.detach().cpu(), mel_post.detach().cpu())
+    writer.add_specs(mels,
                      mel_len.detach().cpu(),
                      iteration//params['accumulation'], 'Validation')
     

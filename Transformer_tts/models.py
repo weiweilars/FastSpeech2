@@ -46,7 +46,7 @@ class EncoderPrenet(nn.Module):
 
         self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
-        self.projection = Linear(emb_dim, hid_dim, bias=False, w_init_gain="linear")
+        self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
 
         self.pos_dropout = nn.Dropout(pos_dropout)
 
@@ -81,7 +81,7 @@ class DecoderPrenet(nn.Module):
             Linear(input_dim, hid_dim, w_init_gain="relu"),
             Linear(hid_dim, hid_dim, w_init_gain="relu"))
 
-        self.projection = Linear(hid_dim, out_dim, bias=False, w_init_gain="linear")
+        self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
         
         self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
 
@@ -306,7 +306,7 @@ class Model(nn.Module):
         self.encoder = TransformerEncoder(encoder_params)
         self.decoder = TransformerDecoder(decoder_params)
         self.postnet = Postnet(postnet_params)
-        self.loss_fn = TTSLoss()
+        self.loss_fn = TTSLoss(device)
 
         self.params = params
         self.device = device 
@@ -319,12 +319,12 @@ class Model(nn.Module):
         mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
-    def make_attn_mask(self, mel, training=True):
+    def make_attn_mask(self, mel):
         # true will be -inf
         # false will be same
         T = mel.size(1)
         diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
-        if training:
+        if self.training:
             diag_mask[diag_mask == 0] = -float('inf')
         else:
             diag_mask[diag_mask == 0] = -1e9
@@ -392,9 +392,6 @@ class Model(nn.Module):
 
                 if stop[i]<0.4:
                     break
-
-                # del mel_linear, mel_post, stop_tokens
-                # torch.cuda.empty_cache()
             
             mel_out = mel[:,:len(stop),:]
 
@@ -402,8 +399,10 @@ class Model(nn.Module):
 
 
 class TTSLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, device):
         super(TTSLoss, self).__init__()
+
+        self.device = device
         
     def forward(self, output, input, alignments):
         
@@ -437,28 +436,34 @@ class TTSLoss(nn.Module):
     
     def guide_loss(self, alignments, seq_len, mel_len):
         
-        batch, num_layers, T, L = alignments.shape
-        cuda_check = alignments.is_cuda
-        if cuda_check:
-            device = 'cuda'
-        else:
-            device = 'cpu'
-
+        T, L = alignments.shape[-2:]
+        batch = alignments.shape[0]
+        
         W = alignments.new_zeros(batch, T, L)
         mask = alignments.new_zeros(batch, T, L)
         for i, (t, l) in enumerate(zip(mel_len, seq_len)):
-            mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(device)
-            text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(device)
+            mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(self.device)
+            text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(self.device)
             x = torch.pow(mel_seq-text_seq, 2)
-            W[i, :t, :l] += (1-torch.exp(-12.5*x)).to(device)
+            W[i, :t, :l] += (1-torch.exp(-12.5*x)).to(self.device)
             mask[i, :t, :l] = 1
 
-        applied_align = alignments[:,-2:]
+        if len(alignments.shape) == 4:
+            
+            applied_align = alignments[:,-2:]
 
-        losses = applied_align*(W.unsqueeze(1))
+            losses = applied_align*(W.unsqueeze(1))
 
-        losses = 10*losses.masked_select(mask.unsqueeze(1).to(torch.bool))
-        
+            losses = losses.masked_select(mask.unsqueeze(1).to(torch.bool))
+
+        elif len(alignments.shape) == 5:
+
+            applied_align = alignments[:,-2:,:2]
+
+            losses = applied_align*(W.unsqueeze(1).unsqueeze(1))
+
+            losses = losses.masked_select(mask.unsqueeze(1).unsqueeze(1))
+            
         return torch.mean(losses)
         
         
