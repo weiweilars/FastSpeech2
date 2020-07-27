@@ -15,12 +15,12 @@
     },
     "train":
     {
-	"batch_size":12,
+	"batch_size":10,
 	"epochs":2000,
 	"lr":0.01,
 	"warmup_step":4000,
 	"grad_clip_thresh":1.0,
-	"accumulation":1
+	"accumulation":3
     },
     "encoderPrenet":
     {

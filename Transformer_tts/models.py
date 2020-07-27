@@ -246,7 +246,7 @@ class Postnet(nn.Module):
                                          hid_dim,
                                          kernel_size=kernel_size,
                                          stride=1,
-                                         padding=int((kernel_size-1)),
+                                         padding=int((kernel_size-1)/2),
                                          dilation=1,
                                          activation='tanh',
                                          dropout=dropout)
@@ -255,7 +255,7 @@ class Postnet(nn.Module):
                                       hid_dim,
                                       kernel_size=kernel_size,
                                       stride=1,
-                                      padding=int((kernel_size-1)),
+                                      padding=int((kernel_size-1)/2),
                                       dilation=1,
                                       activation='tanh',
                                       dropout=dropout)
@@ -267,20 +267,19 @@ class Postnet(nn.Module):
                                         num_mel,
                                         kernel_size=kernel_size,
                                         stride=1,
-                                        padding=int((kernel_size-1)),
+                                        padding=int((kernel_size-1)/2),
                                         dilation=1,
                                         activation='linear',
                                         dropout=dropout)
 
     def forward(self, x):
         # Padding extra to prevent information leaking
-        x_len = x.shape[1]
         x2 = x.transpose(1,2)
-        x2 = self.first_cov(x2[:,:,:x_len])
+        x2 = self.first_cov(x2)
         for layer in self.convolutions:
-            x2 = layer(x2[:,:,:x_len])
-        x2 = self.last_cov(x2[:,:,:x_len])
-        x2 = x2[:,:,:x_len].transpose(1,2)
+            x2 = layer(x2)
+        x2 = self.last_cov(x2)
+        x2 = x2.transpose(1,2)
         x = x + x2
         return x
 
@@ -320,12 +319,15 @@ class Model(nn.Module):
         mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
-    def make_attn_mask(self, mel, type='inf'):
+    def make_attn_mask(self, mel, training=True):
         # true will be -inf
         # false will be same
         T = mel.size(1)
         diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
-        diag_mask[diag_mask == 0] = -float('inf')
+        if training:
+            diag_mask[diag_mask == 0] = -float('inf')
+        else:
+            diag_mask[diag_mask == 0] = -1e9
         diag_mask[diag_mask == 1] = 0
         # diag_mask = ~diag_mask.to(torch.bool)
         return diag_mask
@@ -346,7 +348,7 @@ class Model(nn.Module):
 
         mel_key_mask = self.make_key_mask(mel_len)
 
-        mel_attn_mask = self.make_attn_mask(mel)
+        mel_attn_mask = self.make_attn_mask(mel, self.training)
 
         seq = self.encoder_prenet(seq)
 
@@ -380,24 +382,21 @@ class Model(nn.Module):
         mel_len = torch.tensor([max_len]).to(self.device)
 
         stop = []
-  
-        for i in range(max_len):
-            mel_linear, mel_post, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len)
-            stop.append(torch.sigmoid(stop_tokens[:,i]).item())
-            #pdb.set_trace()
-            if use_post:
-                mel_out = mel_post
-            else:
-                mel_out = mel_linear
-                
-            if i < max_len -1:
-                mel[:,i+1,:]=mel_out[:,i,:]
+        with torch.no_grad():
+            for i in range(max_len):
+                mel_linear, mel_post, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len)
+                stop.append(torch.sigmoid(stop_tokens[:,i]).item())
+     
+                if i < max_len -1:
+                    mel[:,i+1,:]=mel_linear[:,i,:]
 
-            if stop[i]<0.4:
-                break
-        
+                if stop[i]<0.4:
+                    break
+
+                # del mel_linear, mel_post, stop_tokens
+                # torch.cuda.empty_cache()
             
-        mel_out = mel[:,:len(stop),:]
+            mel_out = mel[:,:len(stop),:]
 
         return mel_out
 
@@ -439,7 +438,6 @@ class TTSLoss(nn.Module):
     def guide_loss(self, alignments, seq_len, mel_len):
         
         batch, num_layers, T, L = alignments.shape
-
         cuda_check = alignments.is_cuda
         if cuda_check:
             device = 'cuda'

@@ -19,8 +19,8 @@ def adjust_learning_rate(optimizer, step_num, init_lr, warmup_step=4000):
 def train(model, device, train_loader, optimizer, iteration, params, writer):
     model.train()
     data_len = len(train_loader.dataset)
+    optimizer.zero_grad()
     for batch_idx, _data in enumerate(train_loader):
-        optimizer.zero_grad()
         iteration += 1 
         adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
         
@@ -30,16 +30,18 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                                                                     mel_pos.to(device),
                                                                     seq_pos.to(device),
                                                                     gate.to(device))
-        total_loss = mel_linear_loss+mel_post_loss+gate_loss+guide_loss
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
         total_loss.backward()
-        #loss = loss+total_loss.item()
-        nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
-        optimizer.step()
-        writer.add_losses(mel_linear_loss.item(),
-                          mel_post_loss.item(),
-                          gate_loss.item(),
-                          guide_loss.item(),
-                          iteration//params['accumulation'], 'Train')
+        
+        if iteration % params['accumulation'] == 0:
+            nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
+            optimizer.step()
+            writer.add_losses(mel_linear_loss.item(),
+                              mel_post_loss.item(),
+                              gate_loss.item(),
+                              guide_loss.item(),
+                              iteration//params['accumulation'], 'Train')
+            optimizer.zero_grad()
             
         if batch_idx % 100 == 0 or batch_idx == data_len:
             print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
@@ -80,6 +82,8 @@ def validate(model, device, val_loader, iteration, writer, params):
         print('Test set: Average guide loss: {:.4f}'.format(guide_avg/(i+1)))
 
         total_loss = (mel_linear_avg + mel_post_avg + gate_avg + guide_avg)/(i+1)
+
+        torch.cuda.empty_cache()
 
     mel_inf = model.inference(seq.to(device), seq_len.to(device))
 
