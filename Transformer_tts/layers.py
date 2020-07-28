@@ -75,7 +75,7 @@ class PosEmbeddingLayer(nn.Module):
 
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, hid_dim, n_heads, device='cpu', dropout=0.1, bias=False):
+    def __init__(self, hid_dim, n_heads, device, dropout=0.1, bias=False):
         '''The class to calculate the mutltihead attentions 
 
         Args: 
@@ -151,10 +151,10 @@ class MultiHeadAttentionLayer(nn.Module):
         energy = torch.bmm(Q, K.transpose(1,2))
 
         if attn_mask is not None:
-            if self.training:
-                energy.masked_fill_(attn_mask, float('-inf'))
-            else:
-                energy.masked_fill_(attn_mask, -1e10)
+            # if self.training:
+            #     energy.masked_fill_(attn_mask, float('-inf'))
+            # else:
+            energy.masked_fill_(attn_mask, -1e10)
 
         # energy = [batch_size*n_heads, query_len, key_len]
         if key_padding_mask is not None:
@@ -233,7 +233,7 @@ class EncoderLayer(nn.Module):
         self.ff_layer_norm = nn.LayerNorm(hid_dim)
         
         self.self_attention = MultiHeadAttentionLayer(
-            hid_dim, n_heads, dropout, device)
+            hid_dim, n_heads, device, dropout)
         
         self.positionwise_feedforward = PositionwiseFeedforwardLayer(
             hid_dim, pf_dim, dropout)
@@ -281,9 +281,9 @@ class DecoderLayer(nn.Module):
         self.enc_attn_layer_norm = nn.LayerNorm(hid_dim)
         self.ff_layer_norm = nn.LayerNorm(hid_dim)
         self.self_attention = MultiHeadAttentionLayer(
-            hid_dim, n_heads, dropout, device)
+            hid_dim, n_heads, device, dropout)
         self.encoder_attention = MultiHeadAttentionLayer(
-            hid_dim, n_heads, dropout, device)
+            hid_dim, n_heads, device, dropout)
         self.positionwise_feedforward = PositionwiseFeedforwardLayer(
             hid_dim, pf_dim, dropout)
         self.dropout_1 = nn.Dropout(dropout)
@@ -392,35 +392,50 @@ if __name__ == "__main__":
         mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
-    def make_attn_mask(mel, training=True):
+    def make_attn_mask(mel, mask_future=True, num_neigbour=0):
         # true will be -inf
         # false will be same
         T = mel.size(1)
-        diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
+        
+        if mask_future:
+            past_mask = ~torch.triu(mel.new_ones(T,T)).transpose(0, 1).to(torch.bool)
+        else:
+            past_mask = torch.zeros(T,T).to(torch.bool)
+        if num_neigbour > 0:
+            neig_mask = np.zeros(shape=(T,T))
+            for i in np.arange(-num_neigbour,num_neigbour+1):
+                neig_mask += np.eye(T,T,k=i)
+            neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
+        else:
+            neig_mask = torch.zeros(T,T).to(torch.bool)
         # if training:
         #     diag_mask[diag_mask == 0] = -float('inf')
         # else:
         #     diag_mask[diag_mask == 0] = -1e9
         # diag_mask[diag_mask == 1] = 0
-        diag_mask = ~diag_mask.to(torch.bool)
+
+        pdb.set_trace()
+        final_mask = past_mask | neig_mask
+        
         return diag_mask
 
-    test = torch.rand((2,3,8))
+    test = torch.rand((2,10,8))
 
-    test_2 = torch.rand((2,4,8))
+    # test_2 = torch.rand((2,4,8))
 
-    test_fn = MultiHeadAttentionLayer(8, 4)
+    # test_fn = MultiHeadAttentionLayer(8, 4)
 
-    attn_mask = make_attn_mask(test)
+    # attn_mask = make_attn_mask(test)
 
-    pos = torch.tensor([2,3])
-    key_mask = make_key_mask(pos)
+    # pos = torch.tensor([2,3])
+    # key_mask = make_key_mask(pos)
 
 
-    output, atten = test_fn(test_2, test, test, key_padding_mask=key_mask)
+    # output, atten = test_fn(test_2, test, test, key_padding_mask=key_mask)
 
-    print(test_2.shape)
-    print(output.shape)
-    print(atten.shape)
+    # print(test_2.shape)
+    # print(output.shape)
+    # print(atten.shape)
     
     
+    make_attn_mask(test, mask_future=False, num_neigbour=2)

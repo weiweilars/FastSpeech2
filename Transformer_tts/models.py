@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -26,25 +27,25 @@ class EncoderPrenet(nn.Module):
         
         self.embed = nn.Embedding(voc_len, emb_dim)
 
-        self.first_conv = Conv1dBatchNorm(emb_dim,
-                                          hid_dim,
-                                          kernel_size=kernel_size,
-                                          stride=1,
-                                          padding=int((kernel_size-1)/2),
-                                          dilation=1,
-                                          activation='relu',
-                                          dropout=dropout)
+        # self.first_conv = Conv1dBatchNorm(emb_dim,
+        #                                   hid_dim,
+        #                                   kernel_size=kernel_size,
+        #                                   stride=1,
+        #                                   padding=int((kernel_size-1)/2),
+        #                                   dilation=1,
+        #                                   activation='relu',
+        #                                   dropout=dropout)
         
-        conv = Conv1dBatchNorm(hid_dim,
-                               hid_dim,
-                               kernel_size=kernel_size,
-                               stride=1,
-                               padding=int((kernel_size-1)/2),
-                               dilation=1,
-                               activation='relu',
-                               dropout=dropout)
+        # conv = Conv1dBatchNorm(hid_dim,
+        #                        hid_dim,
+        #                        kernel_size=kernel_size,
+        #                        stride=1,
+        #                        padding=int((kernel_size-1)/2),
+        #                        dilation=1,
+        #                        activation='relu',
+        #                        dropout=dropout)
 
-        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
+        # self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
         self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
 
@@ -55,11 +56,11 @@ class EncoderPrenet(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        x = x.transpose(1, 2)
-        x = self.first_conv(x)
-        for conv in self.convolutions:
-            x = conv(x)
-        x = x.transpose(1, 2)
+        # x = x.transpose(1, 2)
+        # x = self.first_conv(x)
+        # for conv in self.convolutions:
+        #     x = conv(x)
+        # x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -110,11 +111,10 @@ class Encoder(nn.Module):
         self.layers = nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
                                      for _ in range(n_layers)])
 
-    def forward(self, src, src_key_padding_mask):
-        
+    def forward(self, src, src_attn_mask, src_key_padding_mask):
         src_aligns = []
         for layer in self.layers:
-            src, src_align = layer(src, src_key_padding_mask=src_key_padding_mask)
+            src, src_align = layer(src, src_attn_mask=src_attn_mask, src_key_padding_mask=src_key_padding_mask)
             src_aligns.append(src_align.unsqueeze(1))
         src_aligns = torch.cat(src_aligns, 1)
         return src, src_aligns
@@ -301,36 +301,49 @@ class Model(nn.Module):
 
         self.encoder_prenet = EncoderPrenet(enprenet_params)
         self.decoder_prenet = DecoderPrenet(deprenet_params)
-        # self.encoder = Encoder(encoder_params, device)
-        # self.decoder = Decoder(decoder_params, device)
-        self.encoder = TransformerEncoder(encoder_params)
-        self.decoder = TransformerDecoder(decoder_params)
+        self.encoder = Encoder(encoder_params, device)
+        self.decoder = Decoder(decoder_params, device)
+        #self.encoder = TransformerEncoder(encoder_params)
+        #self.decoder = TransformerDecoder(decoder_params)
         self.postnet = Postnet(postnet_params)
         self.loss_fn = TTSLoss(device)
 
         self.params = params
         self.device = device 
 
-    def make_key_mask(self, pos):
+    def make_key_mask(self, len):
         # true will be -inf
         # false will be same
-        max_len = torch.max(pos).item()
+        max_len = torch.max(len).item()
         ids = (torch.arange(0, max_len)).to(self.device)
-        mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
+        mask = (len.unsqueeze(1) <= ids).to(torch.bool)
         return mask
 
-    def make_attn_mask(self, mel):
+    def make_attn_mask(self, len, mask_future=True, num_neigbour=0):
         # true will be -inf
         # false will be same
-        T = mel.size(1)
-        diag_mask = torch.triu(mel.new_ones(T,T)).transpose(0, 1)
-        if self.training:
-            diag_mask[diag_mask == 0] = -float('inf')
+        T = torch.max(len).item()
+        
+        if mask_future:
+            past_mask = ~torch.triu(torch.ones(T,T)).transpose(0, 1).to(torch.bool)
         else:
-            diag_mask[diag_mask == 0] = -1e9
-        diag_mask[diag_mask == 1] = 0
-        # diag_mask = ~diag_mask.to(torch.bool)
-        return diag_mask
+            past_mask = torch.zeros(T,T).to(torch.bool)
+        if num_neigbour > 0:
+            neig_mask = np.zeros(shape=(T,T))
+            for i in np.arange(-num_neigbour,num_neigbour+1):
+                neig_mask += np.eye(T,T,k=i)
+            neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
+        else:
+            neig_mask = torch.zeros(T,T).to(torch.bool)
+        # if training:
+        #     diag_mask[diag_mask == 0] = -float('inf')
+        # else:
+        #     diag_mask[diag_mask == 0] = -1e9
+        # diag_mask[diag_mask == 1] = 0
+
+        final_mask = past_mask | neig_mask
+        
+        return final_mask.to(self.device)
 
     def output(self, mel, seq, mel_len, seq_len):
 
@@ -340,19 +353,21 @@ class Model(nn.Module):
         # waveform = mel2wave(mel[0].squeeze(0).transpose(0,1).cpu().numpy(), params['sample_rate'], params['preemphasis'], params['num_freq'], params['frame_size_ms'], params['frame_hop_ms'], params['min_level_db'], params['num_mel'], params['power'], params['gl_it er'])
 
         # sd.play(waveform, 16000)
-        # status = sd.wait()  
+        # status = sd.wait()
 
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
         seq_key_mask = self.make_key_mask(seq_len)
 
+        seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
+
         mel_key_mask = self.make_key_mask(mel_len)
 
-        mel_attn_mask = self.make_attn_mask(mel, self.training)
+        mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
 
         seq = self.encoder_prenet(seq)
 
-        seq, seq_align = self.encoder(seq, src_key_padding_mask=seq_key_mask)
+        seq, seq_align = self.encoder(seq, src_attn_mask=seq_attn_mask, src_key_padding_mask=seq_key_mask)
 
         mel_input = self.decoder_prenet(mel_input)
 
@@ -362,19 +377,19 @@ class Model(nn.Module):
                                                                          tgt_key_padding_mask=mel_key_mask,
                                                                          src_key_padding_mask=seq_key_mask)
 
-        mel_out = self.postnet(mel_linear)
-
-        return mel_linear, mel_out, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask
+        return mel_linear, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask
         
     def forward(self, mel, seq, mel_len, seq_len, gate):
 
-        mel_linear, mel_out, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+        mel_linear, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+
+        mel_out = self.postnet(mel_linear)
 
         mel_linear_loss, mel_post_loss, gate_loss, guide_loss = self.loss_fn((mel_linear, mel_out, stop_tokens),
                                                                              (mel, gate, mel_key_mask, mel_len, seq_len),
                                                                              (mel_align, seq_align, mel_seq_align))
 
-        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
+        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss, mel_out
 
     def inference(self, seq, seq_len, max_len=1024, use_post=True):
      
@@ -384,7 +399,7 @@ class Model(nn.Module):
         stop = []
         with torch.no_grad():
             for i in range(max_len):
-                mel_linear, mel_post, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len)
+                mel_linear, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len)
                 stop.append(torch.sigmoid(stop_tokens[:,i]).item())
      
                 if i < max_len -1:
@@ -395,7 +410,9 @@ class Model(nn.Module):
             
             mel_out = mel[:,:len(stop),:]
 
-        return mel_out
+            mel_post = self.postnet(mel_out)
+
+        return mel_out, mel_post
 
 
 class TTSLoss(nn.Module):
@@ -445,7 +462,7 @@ class TTSLoss(nn.Module):
             mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(self.device)
             text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(self.device)
             x = torch.pow(mel_seq-text_seq, 2)
-            W[i, :t, :l] += (1-torch.exp(-12.5*x)).to(self.device)
+            W[i, :t, :l] += (1-torch.exp(-1.25*x)).to(self.device)
             mask[i, :t, :l] = 1
 
         if len(alignments.shape) == 4:
@@ -458,11 +475,11 @@ class TTSLoss(nn.Module):
 
         elif len(alignments.shape) == 5:
 
-            applied_align = alignments[:,-2:,:2]
+            applied_align = alignments[:,-2:,:]
 
             losses = applied_align*(W.unsqueeze(1).unsqueeze(1))
 
-            losses = losses.masked_select(mask.unsqueeze(1).unsqueeze(1))
+            losses = losses.masked_select(mask.unsqueeze(1).unsqueeze(1).to(torch.bool))
             
         return torch.mean(losses)
         

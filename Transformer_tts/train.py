@@ -85,25 +85,24 @@ def main(model_path, model_name, log_path):
     
     iteration = 0
 
-    best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
-    # model_file = os.path.join(model_path, 'model.pt')
-    # if os.path.isfile(model_file):
-    #     file = torch.load(model_file)
-    #     iteration = file['iteration']
-    #     optimizer.load_state_dict(file['optimizer'])
-    #     model.load_state_dict(file['model_dict'])
-    #     best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
-    # else:
-    #     best_valid_loss = float("inf")
-    # print(best_valid_loss)
+    model_file = os.path.join(model_path, 'model.pt')
+    if os.path.isfile(model_file):
+        file = torch.load(model_file)
+        iteration = file['iteration']
+        optimizer.load_state_dict(file['optimizer'])
+        model.load_state_dict(file['model_dict'])
+        best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
+    else:
+        best_valid_loss = float("inf")
+    print(best_valid_loss)
 
-    # for epoch in range(1, epochs + 1):
-    #     iteration = train(model, device, train_loader, optimizer, iteration, train_params, writer)
-    #     test_loss = validate(model, device, val_loader, iteration, writer, train_params)
-    #     if test_loss < best_valid_loss:
-    #         print("The validation loss is improved by {}, new model is saving".format(best_valid_loss-test_loss))
-    #         best_valid_loss = test_loss
-    #         save_model(model, optimizer, iteration, params, model_path, model_name)
+    for epoch in range(1, epochs + 1):
+        iteration = train(model, device, train_loader, optimizer, iteration, train_params, writer)
+        test_loss = validate(model, device, val_loader, iteration, writer, train_params)
+        if test_loss < best_valid_loss:
+            print("The validation loss is improved by {}, new model is saving".format(best_valid_loss-test_loss))
+            best_valid_loss = test_loss
+            save_model(model, optimizer, iteration, params, model_path, model_name)
 
 
 if __name__ == "__main__":

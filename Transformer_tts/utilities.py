@@ -25,13 +25,13 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
         adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
         
         mel, seq, gate, mel_pos, seq_pos = _data 
-        mel_linear_loss,mel_post_loss,gate_loss, guide_loss = model(mel.to(device),
-                                                                    seq.to(device),
-                                                                    mel_pos.to(device),
-                                                                    seq_pos.to(device),
-                                                                    gate.to(device))
+        mel_linear_loss,mel_post_loss,gate_loss, guide_loss, _ = model(mel.to(device),
+                                                                       seq.to(device),
+                                                                       mel_pos.to(device),
+                                                                       seq_pos.to(device),
+                                                                       gate.to(device))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)#/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
@@ -60,16 +60,16 @@ def validate(model, device, val_loader, iteration, writer, params):
         mel_linear_avg, mel_post_avg, gate_avg, guide_avg = 0, 0, 0, 0
         for i, batch in enumerate(val_loader):
             mel, seq, gate, mel_len, seq_len = batch
-            mel_linear, mel_post, gate_out, seq_align, mel_align, mel_seq_align, _ = model.output(mel.to(device),
-                                                                                                  seq.to(device),
-                                                                                                  mel_len.to(device),
-                                                                                                  seq_len.to(device))
+            mel_linear, gate_out, seq_align, mel_align, mel_seq_align, _ = model.output(mel.to(device),
+                                                                                        seq.to(device),
+                                                                                        mel_len.to(device),
+                                                                                        seq_len.to(device))
 
-            mel_linear_loss, mel_post_loss, gate_loss, guide_loss = model(mel.to(device),
-                                                                    seq.to(device),
-                                                                    mel_len.to(device),
-                                                                    seq_len.to(device),
-                                                                    gate.to(device))
+            mel_linear_loss, mel_post_loss, gate_loss, guide_loss, mel_post = model(mel.to(device),
+                                                                                   seq.to(device),
+                                                                                   mel_len.to(device),
+                                                                                   seq_len.to(device),
+                                                                                   gate.to(device))
             
             mel_linear_avg += mel_linear_loss.item()
             mel_post_avg += mel_post_loss.item()
@@ -84,11 +84,11 @@ def validate(model, device, val_loader, iteration, writer, params):
 
         total_loss = (mel_linear_avg + mel_post_avg + gate_avg + guide_avg)/(i+1)
 
-        torch.cuda.empty_cache()
+        print('Test set: Average Total loss: {:.4f}'.format(total_loss))
 
-    mel_inf = model.inference(seq.to(device), seq_len.to(device))
+    mel_inf, mel_post_inf = model.inference(seq.to(device), seq_len.to(device))
 
-    mels = (mel.detach().cpu(), mel_inf.detach().cpu())
+    mels = (mel.detach().cpu(), mel_inf.detach().cpu(), mel_post_inf.detach().cpu())
     writer.add_specs(mels,
                      mel_len.detach().cpu(),
                      iteration//params['accumulation'], 'Validation_without_mel')
