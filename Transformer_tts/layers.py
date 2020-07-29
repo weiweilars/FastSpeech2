@@ -373,42 +373,42 @@ class TransformerDecoderLayer(nn.Module):
         
 if __name__ == "__main__":
 
-    def make_key_mask(pos):
-        # true will be -inf
-        # false will be same
-        max_len = torch.max(pos).item()
-        ids = (torch.arange(0, max_len))
-        mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
-        return mask
+    # def make_key_mask(pos):
+    #     # true will be -inf
+    #     # false will be same
+    #     max_len = torch.max(pos).item()
+    #     ids = (torch.arange(0, max_len))
+    #     mask = (pos.unsqueeze(1) <= ids).to(torch.bool)
+    #     return mask
 
-    def make_attn_mask(mel, mask_future=True, num_neigbour=0):
-        # true will be -inf
-        # false will be same
-        T = mel.size(1)
+    # def make_attn_mask(mel, mask_future=True, num_neigbour=0):
+    #     # true will be -inf
+    #     # false will be same
+    #     T = mel.size(1)
         
-        if mask_future:
-            past_mask = ~torch.triu(mel.new_ones(T,T)).transpose(0, 1).to(torch.bool)
-        else:
-            past_mask = torch.zeros(T,T).to(torch.bool)
-        if num_neigbour > 0:
-            neig_mask = np.zeros(shape=(T,T))
-            for i in np.arange(-num_neigbour,num_neigbour+1):
-                neig_mask += np.eye(T,T,k=i)
-            neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
-        else:
-            neig_mask = torch.zeros(T,T).to(torch.bool)
-        # if training:
-        #     diag_mask[diag_mask == 0] = -float('inf')
-        # else:
-        #     diag_mask[diag_mask == 0] = -1e9
-        # diag_mask[diag_mask == 1] = 0
+    #     if mask_future:
+    #         past_mask = ~torch.triu(mel.new_ones(T,T)).transpose(0, 1).to(torch.bool)
+    #     else:
+    #         past_mask = torch.zeros(T,T).to(torch.bool)
+    #     if num_neigbour > 0:
+    #         neig_mask = np.zeros(shape=(T,T))
+    #         for i in np.arange(-num_neigbour,num_neigbour+1):
+    #             neig_mask += np.eye(T,T,k=i)
+    #         neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
+    #     else:
+    #         neig_mask = torch.zeros(T,T).to(torch.bool)
+    #     # if training:
+    #     #     diag_mask[diag_mask == 0] = -float('inf')
+    #     # else:
+    #     #     diag_mask[diag_mask == 0] = -1e9
+    #     # diag_mask[diag_mask == 1] = 0
 
-        pdb.set_trace()
-        final_mask = past_mask | neig_mask
+    #     pdb.set_trace()
+    #     final_mask = past_mask | neig_mask
         
-        return diag_mask
+    #     return diag_mask
 
-    test = torch.rand((2,10,8))
+    # test = torch.rand((2,10,8))
 
     # test_2 = torch.rand((2,4,8))
 
@@ -427,4 +427,10 @@ if __name__ == "__main__":
     # print(atten.shape)
     
     
-    make_attn_mask(test, mask_future=False, num_neigbour=2)
+    test = torch.rand((2,10,8))
+
+    print(test)
+
+    linear = Linear(8,10,bias=False)
+
+    print(linear(test))

@@ -17,10 +17,10 @@
     {
 	"batch_size":10,
 	"epochs":2000,
-	"lr":0.01,
+	"lr":0.05,
 	"warmup_step":4000,
 	"grad_clip_thresh":1.0,
-	"accumulation":3
+	"accumulation":6
     },
     "encoderPrenet":
     {

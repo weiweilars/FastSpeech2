@@ -19,10 +19,8 @@ def adjust_learning_rate(optimizer, step_num, init_lr, warmup_step=4000):
 def train(model, device, train_loader, optimizer, iteration, params, writer):
     model.train()
     data_len = len(train_loader.dataset)
-    optimizer.zero_grad()
     for batch_idx, _data in enumerate(train_loader):
         iteration += 1 
-        adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
         
         mel, seq, gate, mel_pos, seq_pos = _data 
         mel_linear_loss,mel_post_loss,gate_loss, guide_loss, _ = model(mel.to(device),
@@ -31,20 +29,22 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                                                                        seq_pos.to(device),
                                                                        gate.to(device))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)#/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
+            adjust_learning_rate(optimizer, iteration//params['accumulation'], params['lr'], warmup_step=params['warmup_step'])
             nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
             optimizer.step()
+            optimizer.zero_grad()
             losses = {"mel_linear_loss":mel_linear_loss.item(),
                       "mel_post_loss":mel_post_loss.item(),
                       "gate_loss":gate_loss.item(),
                       "guide_loss":guide_loss.item()}
             writer.add_losses(losses, iteration//params['accumulation'], 'Train')
-            optimizer.zero_grad()
             
-        if batch_idx % 100 == 0 or batch_idx == data_len:
+            
+        if batch_idx % 200 == 0 or batch_idx == data_len:
             print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
                 iteration, batch_idx * len(mel), data_len,
                 100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item(), guide_loss.item()))

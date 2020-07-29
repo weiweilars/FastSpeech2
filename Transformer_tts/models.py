@@ -27,25 +27,25 @@ class EncoderPrenet(nn.Module):
         
         self.embed = nn.Embedding(voc_len, emb_dim)
 
-        # self.first_conv = Conv1dBatchNorm(emb_dim,
-        #                                   hid_dim,
-        #                                   kernel_size=kernel_size,
-        #                                   stride=1,
-        #                                   padding=int((kernel_size-1)/2),
-        #                                   dilation=1,
-        #                                   activation='relu',
-        #                                   dropout=dropout)
+        self.first_conv = Conv1dBatchNorm(emb_dim,
+                                          hid_dim,
+                                          kernel_size=kernel_size,
+                                          stride=1,
+                                          padding=int((kernel_size-1)/2),
+                                          dilation=1,
+                                          activation='relu',
+                                          dropout=dropout)
         
-        # conv = Conv1dBatchNorm(hid_dim,
-        #                        hid_dim,
-        #                        kernel_size=kernel_size,
-        #                        stride=1,
-        #                        padding=int((kernel_size-1)/2),
-        #                        dilation=1,
-        #                        activation='relu',
-        #                        dropout=dropout)
+        conv = Conv1dBatchNorm(hid_dim,
+                               hid_dim,
+                               kernel_size=kernel_size,
+                               stride=1,
+                               padding=int((kernel_size-1)/2),
+                               dilation=1,
+                               activation='relu',
+                               dropout=dropout)
 
-        # self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
+        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
         self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
 
@@ -56,11 +56,11 @@ class EncoderPrenet(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        # x = x.transpose(1, 2)
-        # x = self.first_conv(x)
-        # for conv in self.convolutions:
-        #     x = conv(x)
-        # x = x.transpose(1, 2)
+        x = x.transpose(1, 2)
+        x = self.first_conv(x)
+        for conv in self.convolutions:
+            x = conv(x)
+        x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -133,11 +133,7 @@ class Decoder(nn.Module):
 
         self.device = device 
 
-        self.layers = nn.ModuleList([DecoderLayer(hid_dim,
-                                                  n_heads,
-                                                  pf_dim,
-                                                  dropout,
-                                                  device)
+        self.layers = nn.ModuleList([DecoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
@@ -170,19 +166,16 @@ class TransformerEncoder(nn.Module):
         pf_dim = params['pf_dim']
         dropout = params['dropout']
 
-        self.layers = nn.ModuleList([TransformerEncoderLayer(hid_dim,
-                                                             n_heads,
-                                                             pf_dim,
-                                                             dropout)
+        self.layers = nn.ModuleList([TransformerEncoderLayer(hid_dim, n_heads, pf_dim, dropout)
                                      for _ in range(n_layers)])
 
-    def forward(self, src, src_key_padding_mask):
+    def forward(self, src, src_attn_mask, src_key_padding_mask):
         src_aligns = []
         ## change to the correct input shape for MultiheadAttention [seq_len, batch, emb_dim]
         ## the src_aligns checked 
         src = src.transpose(0,1)
         for layer in self.layers:
-            src, src_align = layer(src, src_key_padding_mask=src_key_padding_mask)
+            src, src_align = layer(src, src_attn_mask=src_attn_mask, src_key_padding_mask=src_key_padding_mask)
             src_aligns.append(src_align.unsqueeze(1))
         src_aligns = torch.cat(src_aligns, 1)
         src = src.transpose(0,1)
@@ -361,12 +354,14 @@ class Model(nn.Module):
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
         seq_key_mask = self.make_key_mask(seq_len)
-
-        seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
-
+        
+        # seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
+        seq_attn_mask = None
+        
         mel_key_mask = self.make_key_mask(mel_len)
 
-        mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
+        # mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
+        mel_attn_mask = self.make_attn_mask(mel_len)
 
         seq = self.encoder_prenet(seq)
 
@@ -408,7 +403,7 @@ class Model(nn.Module):
                 if i < max_len -1:
                     mel[:,i+1,:]=mel_linear[:,i,:]
 
-                if stop[i]<0.4:
+                if stop[i]<0.3:
                     break
             
             mel_out = mel[:,:len(stop),:]
