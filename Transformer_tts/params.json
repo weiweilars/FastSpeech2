@@ -44,7 +44,7 @@
     "encoder":
     {
 	"num_layers":6,
-	"hid_dim":256,
+	"hid_dim":512,
 	"pf_dim":1024,
 	"num_heads":4,
 	"dropout":0.2,
