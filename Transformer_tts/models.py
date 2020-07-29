@@ -27,27 +27,28 @@ class EncoderPrenet(nn.Module):
         
         self.embed = nn.Embedding(voc_len, emb_dim)
 
-        self.first_conv = Conv1dBatchNorm(emb_dim,
-                                          hid_dim,
-                                          kernel_size=kernel_size,
-                                          stride=1,
-                                          padding=int((kernel_size-1)/2),
-                                          dilation=1,
-                                          activation='relu',
-                                          dropout=dropout)
+        # self.first_conv = Conv1dBatchNorm(emb_dim,
+        #                                   hid_dim,
+        #                                   kernel_size=kernel_size,
+        #                                   stride=1,
+        #                                   padding=int((kernel_size-1)/2),
+        #                                   dilation=1,
+        #                                   activation='relu',
+        #                                   dropout=dropout)
         
-        conv = Conv1dBatchNorm(hid_dim,
-                               hid_dim,
-                               kernel_size=kernel_size,
-                               stride=1,
-                               padding=int((kernel_size-1)/2),
-                               dilation=1,
-                               activation='relu',
-                               dropout=dropout)
+        # conv = Conv1dBatchNorm(hid_dim,
+        #                        hid_dim,
+        #                        kernel_size=kernel_size,
+        #                        stride=1,
+        #                        padding=int((kernel_size-1)/2),
+        #                        dilation=1,
+        #                        activation='relu',
+        #                        dropout=dropout)
 
-        self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
+        # self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])
 
-        self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
+
+        self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
 
         self.pos_dropout = nn.Dropout(pos_dropout)
 
@@ -56,11 +57,11 @@ class EncoderPrenet(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        x = x.transpose(1, 2)
-        x = self.first_conv(x)
-        for conv in self.convolutions:
-            x = conv(x)
-        x = x.transpose(1, 2)
+        # x = x.transpose(1, 2)
+        # x = self.first_conv(x)
+        # for conv in self.convolutions:
+        #     x = conv(x)
+        # x = x.transpose(1, 2)
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -86,13 +87,13 @@ class DecoderPrenet(nn.Module):
         
         self.pos_emb = PosEmbeddingLayer(num_pos, out_dim)
 
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
         
         self.pos_dropout = nn.Dropout(pos_dropout)
 
     def forward(self, x):
         for layer in self.layers:
-            x = F.dropout(F.relu(layer(x)), self.dropout, self.training)
+            x = self.dropout(F.relu(layer(x)))
         x = self.projection(x)
         x_pos = self.pos_emb(x)
         x = self.pos_dropout(x + x_pos)
@@ -355,13 +356,13 @@ class Model(nn.Module):
 
         seq_key_mask = self.make_key_mask(seq_len)
         
-        # seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
-        seq_attn_mask = None
+        seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
+        # seq_attn_mask = None
         
         mel_key_mask = self.make_key_mask(mel_len)
 
-        # mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
-        mel_attn_mask = self.make_attn_mask(mel_len)
+        mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
+        # mel_attn_mask = self.make_attn_mask(mel_len)
 
         seq = self.encoder_prenet(seq)
 

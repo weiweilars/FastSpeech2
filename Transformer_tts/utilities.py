@@ -29,11 +29,11 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                                                                        seq_pos.to(device),
                                                                        gate.to(device))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)#/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
-            adjust_learning_rate(optimizer, iteration//params['accumulation'], params['lr'], warmup_step=params['warmup_step'])
+            adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
             nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
             optimizer.step()
             optimizer.zero_grad()
@@ -44,7 +44,7 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
             writer.add_losses(losses, iteration//params['accumulation'], 'Train')
             
             
-        if batch_idx % 200 == 0 or batch_idx == data_len:
+        if batch_idx % 100 == 0 or batch_idx == data_len:
             print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
                 iteration, batch_idx * len(mel), data_len,
                 100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item(), guide_loss.item()))

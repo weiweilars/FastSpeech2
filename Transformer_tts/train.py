@@ -104,8 +104,8 @@ def main(model_path, model_name, log_path):
             best_valid_loss = test_loss
             save_model(model, optimizer, iteration, params, model_path, model_name)
 
-        if iteration%1000 == 0:
-            temp_model_path = os.path.join(model_path, iteration)
+        if epoch%10 == 0:
+            temp_model_path = os.path.join(model_path, str(iteration))
             temp_model_name = 'model'+iteration+'.pt'
             save_model(model, optimizer, iteration, params, temp_model_path, temp_model_name)
             
