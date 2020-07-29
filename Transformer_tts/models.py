@@ -84,7 +84,7 @@ class DecoderPrenet(nn.Module):
 
         self.projection = Linear(hid_dim, out_dim, w_init_gain="linear")
         
-        self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
+        self.pos_emb = PosEmbeddingLayer(num_pos, out_dim)
 
         self.dropout = dropout
         
