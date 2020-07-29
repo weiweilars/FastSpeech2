@@ -47,7 +47,7 @@ class EncoderPrenet(nn.Module):
 
         self.convolutions = nn.ModuleList([conv for _ in range(num_conv - 1)])  
 
-        self.projection = Linear(emb_dim, hid_dim, w_init_gain="linear")
+        self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
         self.pos_dropout = nn.Dropout(pos_dropout)
 
