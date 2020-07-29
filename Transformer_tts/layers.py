@@ -118,23 +118,17 @@ class MultiHeadAttentionLayer(nn.Module):
         # query = [batch_size, query_len, hid_dim]
         # key = [batch_size, key_len, hid_dim]
         # value = [batch_size, value_len, hid_dim]
-        Q = self.fc_q(query)
-        Q = Q.view(batch_size, -1, self.n_heads, self.head_dim)
-        K = self.fc_k(key)
-        K = K.view(batch_size, -1, self.n_heads, self.head_dim)
-        V = self.fc_v(value)
-        V = V.view(batch_size, -1, self.n_heads, self.head_dim)
+        Q = self.fc_q(query).view(batch_size, -1, self.n_heads, self.head_dim)
+        K = self.fc_k(key).view(batch_size, -1, self.n_heads, self.head_dim)
+        V = self.fc_v(value).view(batch_size, -1, self.n_heads, self.head_dim)
 
         # Q = [batch_size, query_len, n_heads, head_dim]
         # K = [batch_size, key_len, n_heads, head_dim]
         # V = [batch_size, value_len, n_heads, head_dim]
 
-        Q = Q.transpose(1,2).contiguous()
-        Q = Q.view(batch_size*self.n_heads, -1, self.head_dim)
-        K = K.transpose(1,2).contiguous()
-        K = K.view(batch_size*self.n_heads, -1, self.head_dim)
-        V = V.transpose(1,2).contiguous()
-        V = V.view(batch_size*self.n_heads, -1, self.head_dim)
+        Q = Q.transpose(1,2).contiguous().view(batch_size*self.n_heads, -1, self.head_dim)
+        K = K.transpose(1,2).contiguous().view(batch_size*self.n_heads, -1, self.head_dim)
+        V = V.transpose(1,2).contiguous().view(batch_size*self.n_heads, -1, self.head_dim)
 
         # Q = [batch size*n_heads, query len, head dim]
         # K = [batch size*n_heads, key len, head dim]
@@ -293,7 +287,7 @@ class DecoderLayer(nn.Module):
         # src_mask = [batch_size, src_len]
 
         # self attention
-        _tgt, tgt_attention = self.self_attention(tgt, tgt, tgt, attn_mask=tgt_attn_mask)
+        _tgt, tgt_attention = self.self_attention(tgt, tgt, tgt, attn_mask=tgt_attn_mask, key_padding_mask=tgt_key_padding_mask)
 
         tgt = self.self_attn_layer_norm(tgt + self.dropout_1(_tgt))
 
