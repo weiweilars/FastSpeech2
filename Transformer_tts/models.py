@@ -248,6 +248,7 @@ class Postnet(nn.Module):
                                          stride=1,
                                          padding=int((kernel_size-1)/2),
                                          dilation=1,
+                                         bias=False,
                                          activation='tanh',
                                          dropout=dropout)
         
@@ -257,6 +258,7 @@ class Postnet(nn.Module):
                                       stride=1,
                                       padding=int((kernel_size-1)/2),
                                       dilation=1,
+                                      bias=False,
                                       activation='tanh',
                                       dropout=dropout)
 
@@ -269,6 +271,7 @@ class Postnet(nn.Module):
                                         stride=1,
                                         padding=int((kernel_size-1)/2),
                                         dilation=1,
+                                        bias=False,
                                         activation='linear',
                                         dropout=dropout)
 

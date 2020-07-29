@@ -11,11 +11,9 @@ from numpy import inf
 
 def _get_activation_fn(activation):
     if activation == "relu":
-        return F.relu
-    elif activation == "gelu":
-        return F.gelu
+        return nn.ReLU()
     elif activation == "tanh":
-        return torch.tanh
+        return nn.Tanh()
 
 class Linear(nn.Linear):
     def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
@@ -23,11 +21,8 @@ class Linear(nn.Linear):
         nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
 
 class Conv1d(nn.Conv1d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=None, dilation=1, bias=True, padding_mode='zeros', w_init_gain="linear"):
-        if padding is None:
-            assert(kernel_size % 2 == 1)
-            padding = int(dilation * (kernel_size - 1) / 2)
-        super(Conv1d, self).__init__(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, padding_mode=padding_mode)
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', w_init_gain="linear"):
+        super(Conv1d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode)
         nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
 
         
@@ -36,7 +31,7 @@ class Conv1dBatchNorm(nn.Module):
         super(Conv1dBatchNorm,self).__init__()
 
         self.conv = Conv1d(in_dim, out_dim, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, w_init_gain=activation)
-        self.bn = nn.BatchNorm1d(out_dim)
+        self.norm = nn.BatchNorm1d(out_dim)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -46,7 +41,7 @@ class Conv1dBatchNorm(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        x = self.bn(x)
+        x = self.norm(x)
         if self.act is not 'linear':
             x = self.activation(x)
         out = self.dropout(x)
@@ -61,7 +56,7 @@ class PosEmbeddingLayer(nn.Module):
     def forward(self, x):
         x_len = x.shape[1]
         pos = self.pe[:x_len,:]*self.alpha
-        return x
+        return pos
 
     def _get_pos_matrix(self, num_pos, hid_dim):
         pe = torch.zeros(num_pos, hid_dim)
