@@ -2,6 +2,7 @@ import os
 import pdb
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
@@ -29,11 +30,11 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
                                                                        seq_pos.to(device),
                                                                        gate.to(device))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)#/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
-            adjust_learning_rate(optimizer, iteration, params['lr'], warmup_step=params['warmup_step'])
+            adjust_learning_rate(optimizer, iteration/params['accumulation'], params['lr'], warmup_step=params['warmup_step'])
             nn.utils.clip_grad_norm_(model.parameters(), params['grad_clip_thresh'])
             optimizer.step()
             optimizer.zero_grad()
@@ -44,7 +45,7 @@ def train(model, device, train_loader, optimizer, iteration, params, writer):
             writer.add_losses(losses, iteration//params['accumulation'], 'Train')
             
             
-        if batch_idx % 100 == 0 or batch_idx == data_len:
+        if batch_idx % (50*params['accumulation']) == 0 or batch_idx == data_len:
             print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
                 iteration, batch_idx * len(mel), data_len,
                 100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item(), guide_loss.item()))
@@ -77,10 +78,10 @@ def validate(model, device, val_loader, iteration, writer, params):
             guide_avg += guide_loss.item()
 
 
-        print('Test set: Average mel linear loss: {:.4f}'.format(mel_linear_avg/(i+1)))
-        print('Test set: Average mel post loss: {:.4f}'.format(mel_post_avg/(i+1)))
-        print('Test set: Average gate loss: {:.4f}'.format(gate_avg/(i+1)))
-        print('Test set: Average guide loss: {:.4f}'.format(guide_avg/(i+1)))
+        print('Test set: Average mel linear loss: {:.6f}'.format(mel_linear_avg/(i+1)))
+        print('Test set: Average mel post loss: {:.6f}'.format(mel_post_avg/(i+1)))
+        print('Test set: Average gate loss: {:.6f}'.format(gate_avg/(i+1)))
+        print('Test set: Average guide loss: {:.6f}'.format(guide_avg/(i+1)))
 
         total_loss = (mel_linear_avg + mel_post_avg + gate_avg + guide_avg)/(i+1)
 
@@ -120,3 +121,39 @@ def validate(model, device, val_loader, iteration, writer, params):
     
     
 
+def find_lr(model, optimizer, train_loader, init_lr=1e-8, final_lr=10.0):
+    numer_in_epoch = len(train_loader) -1
+    update_step = (final_lr / init_lr) ** (1 / numer_in_epoch)
+
+    lr = init_lr
+    optmizer.param_groups[0]["lr"] = lr
+    best_loss = 0.0
+    losses = []
+    log_lrs = []
+    for batch_num, data in train_loader:
+        mel, seq, gate, mel_pos, seq_pos = data
+        optimizer.zero_grad()
+        mel_linear_loss,mel_post_loss,gate_loss, guide_loss, _ = model(mel.to(device),
+                                                                       seq.to(device),
+                                                                       mel_pos.to(device),
+                                                                       seq_pos.to(device),
+                                                                       gate.to(device))
+        loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)
+        if batch_num>1 and loss > 4*best_loss:
+            return log_lrs[10:-5], losses[10:-5]
+
+        if loss < best_loss or batch_num == 1:
+            best_loss = loss
+
+        losses.append(loss)
+        log_lrs.append(math.log10(lr))
+
+        loss.backward()
+        optimizer.step()
+
+        lr *= update_step
+        optimizer.param_groups[0]["lr"]=lr
+
+        plt.plot(log_lrs[10:-5], losses[10,-5])
+        
+    return log_lrs[10:-5], losses[10,-5]

@@ -298,10 +298,10 @@ class Model(nn.Module):
 
         self.encoder_prenet = EncoderPrenet(enprenet_params)
         self.decoder_prenet = DecoderPrenet(deprenet_params)
-        self.encoder = Encoder(encoder_params, device)
-        self.decoder = Decoder(decoder_params, device)
-        #self.encoder = TransformerEncoder(encoder_params)
-        #self.decoder = TransformerDecoder(decoder_params)
+        #self.encoder = Encoder(encoder_params, device)
+        #self.decoder = Decoder(decoder_params, device)
+        self.encoder = TransformerEncoder(encoder_params)
+        self.decoder = TransformerDecoder(decoder_params)
         self.postnet = Postnet(postnet_params)
         self.loss_fn = TTSLoss(device)
 
@@ -332,14 +332,16 @@ class Model(nn.Module):
             neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
         else:
             neig_mask = torch.zeros(T,T).to(torch.bool)
-        # if training:
-        #     diag_mask[diag_mask == 0] = -float('inf')
-        # else:
-        #     diag_mask[diag_mask == 0] = -1e9
+    
+        # diag_mask[diag_mask == 0] = -1e9
         # diag_mask[diag_mask == 1] = 0
 
         final_mask = past_mask | neig_mask
-        
+
+        final_mask = final_mask.to(torch.float)
+
+        final_mask[final_mask == True] = -1e9
+
         return final_mask.to(self.device)
 
     def output(self, mel, seq, mel_len, seq_len):
@@ -357,7 +359,7 @@ class Model(nn.Module):
         seq_key_mask = self.make_key_mask(seq_len)
         
         seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
-        # seq_attn_mask = None
+        #seq_attn_mask = None
         
         mel_key_mask = self.make_key_mask(mel_len)
 

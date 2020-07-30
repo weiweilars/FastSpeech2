@@ -105,8 +105,9 @@ def main(model_path, model_name, log_path):
             save_model(model, optimizer, iteration, params, model_path, model_name)
 
         if epoch%10 == 0:
-            temp_model_path = os.path.join(model_path, str(iteration))
-            temp_model_name = 'model'+iteration+'.pt'
+            temp_model_path = os.path.join(model_path, str(epoch))
+            os.makedirs(temp_model_path)
+            temp_model_name = 'model'+str(epoch)+'.pt'
             save_model(model, optimizer, iteration, params, temp_model_path, temp_model_name)
             
 

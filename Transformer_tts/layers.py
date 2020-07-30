@@ -70,7 +70,7 @@ class PosEmbeddingLayer(nn.Module):
 
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, hid_dim, n_heads, device, dropout=0.1, bias=False):
+    def __init__(self, hid_dim, n_heads, device, dropout=0.1, bias=True):
         '''The class to calculate the mutltihead attentions 
 
         Args: 
@@ -110,7 +110,6 @@ class MultiHeadAttentionLayer(nn.Module):
           mask: padding is masked by 0, others are 1 
         '''
 
-        
         batch_size = query.shape[0]
         Q_len = query.shape[1]
         K_len = key.shape[1]
@@ -143,7 +142,10 @@ class MultiHeadAttentionLayer(nn.Module):
             # if self.training:
             #     energy.masked_fill_(attn_mask, float('-inf'))
             # else:
-            energy.masked_fill_(attn_mask, -1e10)
+            if attn_mask.dtype == torch.bool:
+                energy.masked_fill_(attn_mask, -1e9)
+            else:
+                energy += attn_mask
 
         # energy = [batch_size*n_heads, query_len, key_len]
         if key_padding_mask is not None:
@@ -227,9 +229,7 @@ class EncoderLayer(nn.Module):
         self.positionwise_feedforward = PositionwiseFeedforwardLayer(
             hid_dim, pf_dim, dropout)
 
-        self.dropout_1 = nn.Dropout(dropout)
-
-        self.dropout_2 = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, src, src_attn_mask=None, src_key_padding_mask=None):
 
@@ -239,7 +239,7 @@ class EncoderLayer(nn.Module):
         _src, src_attention = self.self_attention(src, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
 
         # dropout, residual connection and layer norm
-        src = self.self_attn_layer_norm(src + self.dropout_1(_src))
+        src = self.self_attn_layer_norm(src + self.dropout(_src))
 
         # src = [batch_size, src_len, hid_dim]
 
@@ -247,7 +247,7 @@ class EncoderLayer(nn.Module):
         _src = self.positionwise_feedforward(src)
 
         # dropout, residual and layer norm
-        src = self.ff_layer_norm(src + self.dropout_2(_src))
+        src = self.ff_layer_norm(src + self.dropout(_src))
 
         # src = [batch_size, src_len, hid_dim]
 
@@ -275,9 +275,7 @@ class DecoderLayer(nn.Module):
             hid_dim, n_heads, device, dropout)
         self.positionwise_feedforward = PositionwiseFeedforwardLayer(
             hid_dim, pf_dim, dropout)
-        self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
-        self.dropout_3 = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, tgt, src, tgt_attn_mask=None, src_attn_mask=None, tgt_key_padding_mask=None, src_key_padding_mask=None):
 
@@ -289,7 +287,7 @@ class DecoderLayer(nn.Module):
         # self attention
         _tgt, tgt_attention = self.self_attention(tgt, tgt, tgt, attn_mask=tgt_attn_mask, key_padding_mask=tgt_key_padding_mask)
 
-        tgt = self.self_attn_layer_norm(tgt + self.dropout_1(_tgt))
+        tgt = self.self_attn_layer_norm(tgt + self.dropout(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
 
@@ -297,7 +295,7 @@ class DecoderLayer(nn.Module):
         _tgt, tgt_src_attention = self.encoder_attention(tgt, src, src, attn_mask=src_attn_mask, key_padding_mask=src_key_padding_mask)
 
         # dropout, residual connection and layer norm
-        tgt = self.enc_attn_layer_norm(tgt + self.dropout_2(_tgt))
+        tgt = self.enc_attn_layer_norm(tgt + self.dropout(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
 
@@ -305,7 +303,7 @@ class DecoderLayer(nn.Module):
         _tgt = self.positionwise_feedforward(tgt)
 
         # dropout, residual and layer norm
-        tgt = self.ff_layer_norm(tgt + self.dropout_3(_tgt))
+        tgt = self.ff_layer_norm(tgt + self.dropout(_tgt))
 
         # trg = [batch_size, trg_len, hid_dim]
         # attention = [batch_size, n_heads, trg_len, src_len]
