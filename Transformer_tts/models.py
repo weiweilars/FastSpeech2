@@ -298,10 +298,15 @@ class Model(nn.Module):
 
         self.encoder_prenet = EncoderPrenet(enprenet_params)
         self.decoder_prenet = DecoderPrenet(deprenet_params)
-        #self.encoder = Encoder(encoder_params, device)
-        #self.decoder = Decoder(decoder_params, device)
-        self.encoder = TransformerEncoder(encoder_params)
-        self.decoder = TransformerDecoder(decoder_params)
+        if encoder_params['transform_type'] == 'own':
+            self.encoder = Encoder(encoder_params, device)
+        else:
+            self.encoder = TransformerEncoder(encoder_params)
+
+        if decoder_params['transform_type'] == 'own':
+            self.decoder = Decoder(decoder_params, device)
+        else:
+            self.decoder = TransformerDecoder(decoder_params)
         self.postnet = Postnet(postnet_params)
         self.loss_fn = TTSLoss(device)
 
@@ -332,9 +337,6 @@ class Model(nn.Module):
             neig_mask = ~torch.tensor(neig_mask).to(torch.bool)
         else:
             neig_mask = torch.zeros(T,T).to(torch.bool)
-    
-        # diag_mask[diag_mask == 0] = -1e9
-        # diag_mask[diag_mask == 1] = 0
 
         final_mask = past_mask | neig_mask
 
@@ -357,14 +359,14 @@ class Model(nn.Module):
         mel_input=F.pad(mel.transpose(1,2),(1,-1)).transpose(1,2) ### switch the input to not leak the information
 
         seq_key_mask = self.make_key_mask(seq_len)
-        
-        seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
-        #seq_attn_mask = None
-        
+
+        seq_attn_mask = None
+        if self.params['encoder']['num_neighbour_mask'] != 0:
+            seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
+
         mel_key_mask = self.make_key_mask(mel_len)
 
         mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
-        # mel_attn_mask = self.make_attn_mask(mel_len)
 
         seq = self.encoder_prenet(seq)
 
@@ -476,7 +478,7 @@ class TTSLoss(nn.Module):
 
         elif len(alignments.shape) == 5:
 
-            applied_align = alignments[:,-2:,:]
+            applied_align = alignments[:,-2:,:2]
 
             losses = applied_align*(W.unsqueeze(1).unsqueeze(1))
 

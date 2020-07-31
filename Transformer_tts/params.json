@@ -47,8 +47,9 @@
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.2,
-	"num_neighbour_mask":15
+	"dropout":0.1,
+	"num_neighbour_mask":0,
+	"transform_type":"own"
     },
     "decoder":
     {
@@ -56,9 +57,10 @@
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
-	"dropout":0.2,
+	"dropout":0.1,
 	"num_mel":80,
-	"num_neighbour_mask":30
+	"num_neighbour_mask":0,
+	"transform_type":"own"
     },
     "postnet":
     {
