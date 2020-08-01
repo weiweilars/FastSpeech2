@@ -19,11 +19,15 @@ class Linear(nn.Linear):
     def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
         super(Linear, self).__init__(in_dim, out_dim, bias)
         nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
+        if bias:
+             nn.init.zeros_(self.bias)
 
 class Conv1d(nn.Conv1d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', w_init_gain="linear"):
         super(Conv1d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode)
         nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain(w_init_gain))
+        if bias:
+             nn.init.zeros_(self.bias)
 
         
 class Conv1dBatchNorm(nn.Module):
@@ -133,8 +137,9 @@ class MultiHeadAttentionLayer(nn.Module):
         # K = [batch size*n_heads, key len, head dim]
         # V = [batch size*n_heads, value len, head dim]
 
-        Q = Q/(self.head_dim ** 1/4)
-        K = K/(self.head_dim ** 1/4)
+        scaling = torch.float(self.head_dim) ** -0.5
+        Q = Q * scaling 
+        K = K
         
         energy = torch.bmm(Q, K.transpose(1,2))
 
