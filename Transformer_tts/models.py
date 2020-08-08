@@ -100,7 +100,7 @@ class DecoderPrenet(nn.Module):
         return x
 
 class Encoder(nn.Module):
-    def __init__(self, params, device):
+    def __init__(self, params):
         super(Encoder, self).__init__()
         
         hid_dim = params['hid_dim']
@@ -109,7 +109,7 @@ class Encoder(nn.Module):
         pf_dim = params['pf_dim']
         dropout = params['dropout']
 
-        self.layers = nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
+        self.layers = nn.ModuleList([EncoderLayer(hid_dim, n_heads, pf_dim, dropout)
                                      for _ in range(n_layers)])
 
     def forward(self, src, src_attn_mask, src_key_padding_mask):
@@ -122,7 +122,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, params, device):
+    def __init__(self, params):
         super(Decoder, self).__init__()
 
         hid_dim = params['hid_dim']
@@ -132,9 +132,7 @@ class Decoder(nn.Module):
         dropout = params['dropout']
         num_mel = params['num_mel']
 
-        self.device = device 
-
-        self.layers = nn.ModuleList([DecoderLayer(hid_dim, n_heads, pf_dim, dropout, device)
+        self.layers = nn.ModuleList([DecoderLayer(hid_dim, n_heads, pf_dim, dropout)
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
@@ -194,10 +192,7 @@ class TransformerDecoder(nn.Module):
         dropout = params['dropout']
         num_mel = params['num_mel']
 
-        self.layers = nn.ModuleList([TransformerDecoderLayer(hid_dim,
-                                                             n_heads,
-                                                             pf_dim,
-                                                             dropout)
+        self.layers = nn.ModuleList([TransformerDecoderLayer(hid_dim, n_heads, pf_dim, dropout)
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
@@ -298,17 +293,12 @@ class Model(nn.Module):
 
         self.encoder_prenet = EncoderPrenet(enprenet_params)
         self.decoder_prenet = DecoderPrenet(deprenet_params)
-        if encoder_params['transform_type'] == 'own':
-            self.encoder = Encoder(encoder_params, device)
-        else:
-            self.encoder = TransformerEncoder(encoder_params)
+        
+        self.encoder = TransformerEncoder(encoder_params)
 
-        if decoder_params['transform_type'] == 'own':
-            self.decoder = Decoder(decoder_params, device)
-        else:
-            self.decoder = TransformerDecoder(decoder_params)
+        self.decoder = TransformerDecoder(decoder_params)
+            
         self.postnet = Postnet(postnet_params)
-        self.loss_fn = TTSLoss(device)
 
         self.params = params
         self.device = device 
@@ -384,20 +374,22 @@ class Model(nn.Module):
         
     def forward(self, mel, seq, mel_len, seq_len, gate):
 
-        mel_linear, stop_tokens, seq_align, mel_align, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
+        mel_linear, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask = self.output(mel, seq, mel_len, seq_len)
 
         mel_out = self.postnet(mel_linear)
 
-        mel_linear_loss, mel_post_loss, gate_loss, guide_loss = self.loss_fn((mel_linear, mel_out, stop_tokens),
-                                                                             (mel, gate, mel_key_mask, mel_len, seq_len),
-                                                                             (mel_align, seq_align, mel_seq_align))
+        return mel_linear, mel_out, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask
 
-        return mel_linear_loss, mel_post_loss, gate_loss, guide_loss, mel_out
-
-    def inference(self, seq, seq_len, max_len=1024, use_post=True):
+    def inference(self, seq, seq_len, max_len=1024, test_len=None):
      
+        
+        if test_len is not None:
+            mel_len = test_len 
+            max_len = int(test_len)
+        else:
+            mel_len = torch.tensor([max_len]).to(self.device)
+
         mel = torch.zeros(1, max_len,self.params['data']['num_mel']).to(self.device)
-        mel_len = torch.tensor([max_len]).to(self.device)
 
         stop = []
         with torch.no_grad():
@@ -408,14 +400,16 @@ class Model(nn.Module):
                 if i < max_len -1:
                     mel[:,i+1,:]=mel_linear[:,i,:]
 
-                if stop[i]<0.3:
+                if stop[i]<0.3 and test_len is None:
                     break
-            
-            mel_out = mel[:,:len(stop),:]
-
+                
+            if test_len is None:
+                mel_out = mel[:,:len(stop),:]
+            else:
+                mel_out = mel
             mel_post = self.postnet(mel_out)
 
-        return mel_out, mel_post
+        return mel_out, mel_post, stop 
 
 
 class TTSLoss(nn.Module):
@@ -424,7 +418,7 @@ class TTSLoss(nn.Module):
 
         self.device = device
         
-    def forward(self, output, input, alignments):
+    def forward(self, output, input, alignments=None):
         
         mel_linear, mel_post, gate_out = output
         mel_target, gate_target, mel_mask, mel_len, seq_len = input
@@ -446,11 +440,10 @@ class TTSLoss(nn.Module):
 
         # guide_loss_1 = self.guide_loss(alignments[1], seq_len, seq_len)
 
-        guide_loss = self.guide_loss(alignments[2], seq_len, mel_len)
-
-        # guide_loss = torch.tensor(0)
-
-        # guide_loss = guide_loss_0 + guide_loss_1 + guide_loss_2
+        if alignments is not None:
+            guide_loss = self.guide_loss(alignments[2], seq_len, mel_len)
+        else:
+            guide_loss = torch.tensor(0.0)
         
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     

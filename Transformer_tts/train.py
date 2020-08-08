@@ -10,7 +10,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from dataloader_utils import LJSPEECH_MEL, data_mel_processing
-from models import Model
+from models import Model, TTSLoss
 from utilities import train, validate
 from save_util import save_model, get_writer
 
@@ -27,8 +27,14 @@ def main(model_path, model_name, log_path):
 
     torch.manual_seed(0)
 
+    
+
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
+
+    num_gpu = torch.cuda.device_count() 
+    print("There are {} gups.".format(num_gpu))
+    
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
     if not os.path.isdir("../data"):
@@ -71,6 +77,11 @@ def main(model_path, model_name, log_path):
                                   **kwargs)
 
     model = Model(params, device).to(device)
+
+    if num_gpu > 1:
+        model = nn.DataParallel(model)
+        
+    criteriate = TTSLoss(device).to(device)
     # print(model)
     # for name, param in model.named_parameters():
     #     if param.requires_grad:
@@ -84,21 +95,20 @@ def main(model_path, model_name, log_path):
                                  eps = 1e-09)
     
     iteration = 0
-
     model_file = os.path.join(model_path, 'model.pt')
     if os.path.isfile(model_file):
         file = torch.load(model_file)
         iteration = file['iteration']
         optimizer.load_state_dict(file['optimizer'])
         model.load_state_dict(file['model_dict'])
-        best_valid_loss= validate(model, device, val_loader, iteration, writer, train_params)
+        best_valid_loss= validate(model, criteriate, device, val_loader, iteration, writer, train_params)
     else:
         best_valid_loss = float("inf")
     print(best_valid_loss)
 
     for epoch in range(1, epochs + 1):
-        iteration = train(model, device, train_loader, optimizer, iteration, train_params, writer)
-        test_loss = validate(model, device, val_loader, iteration, writer, train_params)
+        iteration = train(model, criteriate, device, train_loader, optimizer, iteration, train_params, writer)
+        test_loss = validate(model, criteriate, device, val_loader, iteration, writer, train_params)
         if test_loss < best_valid_loss:
             print("The validation loss is improved by {}, new model is saving".format(best_valid_loss-test_loss))
             best_valid_loss = test_loss
