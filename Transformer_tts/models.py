@@ -10,7 +10,7 @@ import soundfile as sf
 
 import pdb
 
-from layers import Conv1d, Linear, Conv1dBatchNorm, PosEmbeddingLayer, EncoderLayer, DecoderLayer, TransformerEncoderLayer, TransformerDecoderLayer
+from layers import Conv1d, Linear, Conv1dBatchNorm, PosEmbeddingLayer, TransformerEncoderLayer, TransformerDecoderLayer
 
 class EncoderPrenet(nn.Module):
     def __init__(self, params):

@@ -133,10 +133,6 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
     torch.cuda.empty_cache()
     return total_loss
 
-
-    
-    
-
 def find_lr(model, optimizer, train_loader, init_lr=1e-8, final_lr=10.0):
     numer_in_epoch = len(train_loader) -1
     update_step = (final_lr / init_lr) ** (1 / numer_in_epoch)
