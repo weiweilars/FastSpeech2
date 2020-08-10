@@ -28,7 +28,7 @@
 	"hid_dim":256,
 	"kernel_size":5,
 	"num_conv": 3,
-	"dropout":0.2,
+	"dropout":0.5,
 	"pos_dropout":0.1,
 	"num_pos":1000
     },
@@ -37,7 +37,7 @@
 	"mel_dim":80,
 	"hid_dim":256,
 	"out_dim":256,
-	"dropout":0.2,
+	"dropout":0.5,
 	"pos_dropout":0.1,
 	"num_pos":10000
     },
@@ -48,7 +48,7 @@
 	"pf_dim":1024,
 	"num_heads":4,
 	"dropout":0.1,
-	"num_neighbour_mask":0
+	"num_neighbour_mask":20
     },
     "decoder":
     {
