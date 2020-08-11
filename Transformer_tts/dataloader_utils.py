@@ -81,8 +81,8 @@ def data_mel_processing(data, params):
         mels.append(mel)
         # print(char)
         # print(phone)
-        gate = torch.ones(melspec.shape[1])
-        gate[-1] = 0
+        gate = torch.zeros(melspec.shape[1])
+        gate[-1] = 1
         gates.append(gate)
         if type == 'char':
             label = char_seq

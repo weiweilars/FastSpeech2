@@ -48,7 +48,7 @@
 	"pf_dim":1024,
 	"num_heads":4,
 	"dropout":0.1,
-	"num_neighbour_mask":20
+	"num_neighbour_mask":0
     },
     "decoder":
     {
