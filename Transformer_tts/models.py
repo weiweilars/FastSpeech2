@@ -343,7 +343,7 @@ class Model(nn.Module):
                 if i < max_len -1:
                     mel[:,i+1,:]=mel_linear[:,i,:]
 
-                if stop[i]<0.3 and test_len is None:
+                if stop[i] > 0.7 and test_len is None:
                     break
                 
             if test_len is None:
@@ -362,7 +362,7 @@ class TTSLoss(nn.Module):
         self.device = device
         
     def forward(self, output, input, alignments=None):
-        
+
         mel_linear, mel_post, gate_out = output
         mel_target, gate_target, mel_mask, mel_len, seq_len = input
         mel_mask = ~mel_mask

@@ -94,7 +94,7 @@ def data_mel_processing(data, params):
     mels = pad_sequence(mels, batch_first=True)
     seqs = pad_sequence(seqs, batch_first=True)
     gates = pad_sequence(gates, batch_first=True)
-    
+
     return mels, seqs, gates, torch.tensor(mel_len), torch.tensor(seq_len)
 
 class LJSPEECH_MEL(Dataset):

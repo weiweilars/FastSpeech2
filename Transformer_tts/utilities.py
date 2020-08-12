@@ -23,7 +23,6 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
     data_len = len(train_loader.dataset)
     for batch_idx, _data in enumerate(train_loader):
         iteration += 1 
-        
         mel, seq, gate, mel_len, seq_len = _data
         mel, seq, gate, mel_len, seq_len = mel.to(device), seq.to(device), gate.to(device), mel_len.to(device), seq_len.to(device)
 
@@ -129,6 +128,8 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
     
     writer.add_gates(gate_out.detach().cpu(),
                     iteration//params['accumulation'], 'Validation')
+    writer.add_gates(gate_out_info.detach().cpu(),
+                    iteration//params['accumulation'], 'Inference')
 
     torch.cuda.empty_cache()
     return total_loss

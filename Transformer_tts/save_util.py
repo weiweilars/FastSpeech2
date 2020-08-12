@@ -29,27 +29,33 @@ def plot_alignments(alignments, mel_len=[0], seq_len=[0], att_type='mel_seq'):
             if att_type=='seq':
                 align = alignments[-1, layer, head].contiguous()
                 if n_heads == 1:
-                    axes[layer].imshow(align[:L, :L], aspect='auto')
+                    # axes[layer].imshow(align[:L, :L], aspect='auto')
+                    axes[layer].imshow(align, aspect='auto')
                     axes[layer].xaxis.tick_top()
                 else:
-                    axes[layer, head].imshow(align[:L, :L], aspect='auto')
+                    # axes[layer, head].imshow(align[:L, :L], aspect='auto')
+                    axes[layer, head].imshow(align, aspect='auto')
                     axes[layer, head].xaxis.tick_top()
 
             elif att_type=='mel':
                 align = alignments[-1, layer, head].contiguous()
                 if n_heads==1:
-                    axes[layer].imshow(align[:T, :T], aspect='auto')
+                    # axes[layer].imshow(align[:T, :T], aspect='auto')
+                    axes[layer].imshow(align, aspect='auto')
                     axes[layer].xaxis.tick_top()
                 else:
-                    axes[layer, head].imshow(align[:T, :T], aspect='auto')
+                    # axes[layer, head].imshow(align[:T, :T], aspect='auto')
+                    axes[layer, head].imshow(align, aspect='auto')
                     axes[layer, head].xaxis.tick_top()
 
             elif att_type=='mel_seq':
                 align = alignments[-1, layer, head].transpose(0,1).contiguous()
                 if n_heads==1:
-                    axes[layer].imshow(align[:L, :T], aspect='auto')
+                    # axes[layer].imshow(align[:L, :T], aspect='auto')
+                    axes[layer].imshow(align, aspect='auto')
                 else:
-                    axes[layer, head].imshow(align[:L, :T], aspect='auto')
+                    # axes[layer, head].imshow(align[:L, :T], aspect='auto')
+                    axes[layer, head].imshow(align, aspect='auto')
  
     return fig
 
