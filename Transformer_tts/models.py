@@ -139,7 +139,7 @@ class TransformerDecoder(nn.Module):
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
-        self.stop_linear = Linear(hid_dim, 1, w_init_gain='sigmoid')
+        self.stop_linear = Linear(hid_dim, 1)
 
     def forward(self, tgt, src, tgt_attn_mask, tgt_key_padding_mask, src_key_padding_mask):
    
