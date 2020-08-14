@@ -139,7 +139,7 @@ class TransformerDecoder(nn.Module):
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
-        self.stop_linear = Linear(hid_dim, 1)
+        self.stop_linear = nn.Linear(hid_dim, 1)
 
     def forward(self, tgt, src, tgt_attn_mask, tgt_key_padding_mask, src_key_padding_mask):
    
@@ -343,7 +343,7 @@ class Model(nn.Module):
                 if i < max_len -1:
                     mel[:,i+1,:]=mel_linear[:,i,:]
 
-                if stop[i] > 0.7 and test_len is None:
+                if stop[i] > 0.5 and test_len is None:
                     break
                 
             if test_len is None:

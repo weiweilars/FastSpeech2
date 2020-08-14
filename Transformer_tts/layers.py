@@ -27,7 +27,7 @@ class Conv1d(nn.Conv1d):
 
         
 class Conv1dBatchNorm(nn.Module):
-    def __init__(self, in_dim, out_dim, kernel_size, stride, padding, dilation=1, bias=True, activation="linear", dropout=0.1):
+    def __init__(self, in_dim, out_dim, kernel_size, stride, padding=0, dilation=1, bias=True, activation="linear", dropout=0.1):
         super(Conv1dBatchNorm,self).__init__()
 
         self.conv = Conv1d(in_dim, out_dim, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, bias=bias, w_init_gain=activation)
@@ -36,6 +36,7 @@ class Conv1dBatchNorm(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         self.act = activation
+        
         if activation is not 'linear':
             self.activation = _get_activation_fn(activation)
 
