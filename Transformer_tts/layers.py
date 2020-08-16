@@ -174,8 +174,8 @@ class TransformerEncoderLayer(nn.Module):
                  activation="relu"):
 
         super(TransformerEncoderLayer, self).__init__()
-        # self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        # self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
         self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
         self.ff_linear2 = Linear(pf_dim, hid_dim)
 
@@ -196,10 +196,10 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, hid_dim, n_heads, pf_dim=2048, dropout=0.1, activation="relu"):
         super(TransformerDecoderLayer, self).__init__()
-        # self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        # self.cross_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
-        self.cross_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        self.cross_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        # self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        # self.cross_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
 
         self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
         self.ff_linear2 = Linear(pf_dim, hid_dim)

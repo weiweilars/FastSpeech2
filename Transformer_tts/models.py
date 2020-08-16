@@ -22,7 +22,6 @@ class EncoderPrenet(nn.Module):
         num_conv = params['num_conv']
         kernel_size = params['kernel_size']
         dropout = params['dropout']
-        pos_dropout = params['pos_dropout']
         num_pos = params['num_pos']
         
         self.embed = nn.Embedding(voc_len, emb_dim)
@@ -49,8 +48,6 @@ class EncoderPrenet(nn.Module):
 
         self.projection = Linear(hid_dim, hid_dim, w_init_gain="linear")
 
-        self.pos_dropout = nn.Dropout(pos_dropout)
-
         self.pos_emb = PosEmbeddingLayer(num_pos, hid_dim)
 
 
@@ -62,8 +59,7 @@ class EncoderPrenet(nn.Module):
             x = conv(x)
         x = x.transpose(1, 2)
         x = self.projection(x)
-        x_pos = self.pos_emb(x)
-        x = self.pos_dropout(x + x_pos)
+        x = x + self.pos_emb(x)
         return x
 
 
@@ -75,7 +71,6 @@ class DecoderPrenet(nn.Module):
         hid_dim = params['hid_dim']
         out_dim = params['out_dim']
         dropout = params['dropout']
-        pos_dropout = params['pos_dropout']
         num_pos = params['num_pos']
 
         self.layers = nn.Sequential(
@@ -87,15 +82,12 @@ class DecoderPrenet(nn.Module):
         self.pos_emb = PosEmbeddingLayer(num_pos, out_dim)
 
         self.dropout = nn.Dropout(dropout)
-        
-        self.pos_dropout = nn.Dropout(pos_dropout)
 
     def forward(self, x):
         for layer in self.layers:
             x = self.dropout(F.relu(layer(x)))
         x = self.projection(x)
-        x_pos = self.pos_emb(x)
-        x = self.pos_dropout(x + x_pos)
+        x = x + self.pos_emb(x)
         return x
 
 class TransformerEncoder(nn.Module):
@@ -359,6 +351,7 @@ class Model(nn.Module):
                                                          src_key_padding_mask=seq_key_mask)
             if i < max_len-1:
                 mel=torch.cat((mel,mel_linear[:,i,:].unsqueeze(1)),dim=1)
+                
             if torch.sigmoid(stop_tokens[:,i]).item()>0.5 and test_len is None:
                 break
 

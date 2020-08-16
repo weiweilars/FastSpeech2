@@ -105,7 +105,6 @@ def main(model_path, model_name, log_path):
     else:
         best_valid_loss = float("inf")
         
-    validate(model, criteriate, device, val_loader, iteration, writer, train_params)
     for epoch in range(1, epochs + 1):
         iteration = train(model, criteriate, device, train_loader, optimizer, iteration, train_params, writer)
         test_loss = validate(model, criteriate, device, val_loader, iteration, writer, train_params)

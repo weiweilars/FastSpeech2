@@ -29,7 +29,6 @@
 	"kernel_size":5,
 	"num_conv": 3,
 	"dropout":0.5,
-	"pos_dropout":0.1,
 	"num_pos":1000
     },
     "decoderPrenet":
@@ -38,7 +37,6 @@
 	"hid_dim":256,
 	"out_dim":256,
 	"dropout":0.5,
-	"pos_dropout":0.1,
 	"num_pos":10000
     },
     "encoder":
