@@ -33,7 +33,7 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
                                                                            (mel_align, seq_align, mel_seq_align))
         
         total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
-        total_loss.mean().backward()
+        total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
             adjust_learning_rate(optimizer, iteration/params['accumulation'], params['lr'], warmup_step=params['warmup_step'])

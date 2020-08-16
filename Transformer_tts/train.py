@@ -78,8 +78,8 @@ def main(model_path, model_name, log_path):
 
     model = Model(params, device).to(device)
 
-    if num_gpu > 1:
-        model = nn.DataParallel(model)
+    # if num_gpu > 1:
+    #     model = nn.DataParallel(model)
         
     criteriate = TTSLoss(device).to(device)
     # print(model)
