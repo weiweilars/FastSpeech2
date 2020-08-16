@@ -55,8 +55,8 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
                 print(param_group['lr'])
 
         
-        # del mel_linear, mel_out, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask
-        # gc.collect()
+        del mel_linear, mel_out, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask
+        gc.collect()
         torch.cuda.empty_cache()
 
     return iteration
@@ -91,7 +91,7 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
 
         mel_inf, mel_post_inf, gate_out_inf = model.inference(seq[-1:], seq_len[-1:], test_len=mel_len[-1:])
 
-        gate_out_inf = torch.tensor([gate_out_inf]).to(device)
+        #gate_out_inf = torch.tensor([gate_out_inf]).to(device)
         
         mel_linear_loss_inf, mel_post_loss_inf, gate_loss_inf, _ = criteriate((mel_inf, mel_post_inf, gate_out_inf),
                                                                   (mel[-1:], gate[-1:], mel_key_mask[-1:], mel_len[-1:], seq_len[-1:]))
@@ -128,7 +128,7 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
     
     writer.add_gates(gate_out.detach().cpu(),
                     iteration//params['accumulation'], 'Validation')
-    writer.add_gates(gate_out_info.detach().cpu(),
+    writer.add_gates(gate_out_inf.detach().cpu(),
                     iteration//params['accumulation'], 'Inference')
 
     torch.cuda.empty_cache()

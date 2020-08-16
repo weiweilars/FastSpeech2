@@ -148,7 +148,7 @@ class TransformerDecoder(nn.Module):
         ## change to the correct input shape for MultiheadAttention [seq_len, batch, emb_dim]
         tgt = tgt.transpose(0,1)
         src = src.transpose(0,1)
-        
+
         for layer in self.layers:
             tgt, tgt_align, tgt_src_align = layer(tgt, src, tgt_attn_mask=tgt_attn_mask, tgt_key_padding_mask=tgt_key_padding_mask, src_key_padding_mask=src_key_padding_mask)
             tgt_aligns.append(tgt_align.unsqueeze(1))
@@ -324,7 +324,7 @@ class Model(nn.Module):
         return mel_linear, mel_out, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask
 
     def inference(self, seq, seq_len, max_len=1024, test_len=None):
-     
+        
         
         if test_len is not None:
             mel_len = test_len 
@@ -332,27 +332,39 @@ class Model(nn.Module):
         else:
             mel_len = torch.tensor([max_len]).to(self.device)
 
-        mel = torch.zeros(1, max_len,self.params['data']['num_mel']).to(self.device)
+        mel = torch.zeros(1, 1, self.params['data']['num_mel']).to(self.device)
 
-        stop = []
-        with torch.no_grad():
-            for i in range(max_len):
-                mel_linear, stop_tokens, _, _, _, _ = self.output(mel, seq, mel_len, seq_len)
-                stop.append(torch.sigmoid(stop_tokens[:,i]).item())
-     
-                if i < max_len -1:
-                    mel[:,i+1,:]=mel_linear[:,i,:]
+        seq_key_mask = self.make_key_mask(seq_len)
 
-                if stop[i] > 0.5 and test_len is None:
-                    break
-                
-            if test_len is None:
-                mel_out = mel[:,:len(stop),:]
-            else:
-                mel_out = mel
-            mel_post = self.postnet(mel_out)
+        seq_attn_mask = None
+        if self.params['encoder']['num_neighbour_mask'] != 0:
+            seq_attn_mask = self.make_attn_mask(seq_len, mask_future=False, num_neigbour=self.params['encoder']['num_neighbour_mask'])
 
-        return mel_out, mel_post, stop 
+        mel_key_mask = self.make_key_mask(mel_len)
+
+        mel_attn_mask = self.make_attn_mask(mel_len, num_neigbour=self.params['decoder']['num_neighbour_mask'])
+
+        seq = self.encoder_prenet(seq)
+
+        seq, seq_align = self.encoder(seq, src_attn_mask=seq_attn_mask, src_key_padding_mask=seq_key_mask)
+
+        for i in range(max_len):
+
+            mel_input = self.decoder_prenet(mel)
+
+            mel_linear, stop_tokens, _, _ = self.decoder(mel_input,
+                                                         seq,
+                                                         tgt_attn_mask=mel_attn_mask[:i+1,:i+1],
+                                                         tgt_key_padding_mask=mel_key_mask[:,:i+1],
+                                                         src_key_padding_mask=seq_key_mask)
+            if i < max_len-1:
+                mel=torch.cat((mel,mel_linear[:,i,:].unsqueeze(1)),dim=1)
+            if torch.sigmoid(stop_tokens[:,i]).item()>0.5 and test_len is None:
+                break
+
+        mel_post = self.postnet(mel_linear)
+
+        return mel_linear, mel_post, stop_tokens
 
 
 class TTSLoss(nn.Module):
