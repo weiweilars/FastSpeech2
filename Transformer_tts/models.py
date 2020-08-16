@@ -382,7 +382,7 @@ class TTSLoss(nn.Module):
         mel_linear_loss = nn.L1Loss()(mel_linear, mel_target)
         mel_post_loss = nn.L1Loss()(mel_post, mel_target)
 
-        gate_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(8.0))(gate_out, gate_target)
+        gate_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(5.0))(gate_out, gate_target)
 
         # guide_loss = self.guide_loss(alignments[0], mel_len, mel_len)
 
