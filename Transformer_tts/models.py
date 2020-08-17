@@ -131,7 +131,7 @@ class TransformerDecoder(nn.Module):
                                      for _ in range(n_layers)])
 
         self.mel_linear = Linear(hid_dim, num_mel)
-        self.stop_linear = nn.Linear(hid_dim, 1)
+        self.stop_linear = nn.Linear(num_mel, 1)
 
     def forward(self, tgt, src, tgt_attn_mask, tgt_key_padding_mask, src_key_padding_mask):
    
@@ -151,8 +151,9 @@ class TransformerDecoder(nn.Module):
 
         tgt = tgt.transpose(0,1)
 
-        stop_tokens = self.stop_linear(tgt).squeeze(-1)
         mel_out = self.mel_linear(tgt)
+        stop_tokens = self.stop_linear(mel_out).squeeze(-1)
+        
         
         return mel_out, stop_tokens, tgt_aligns, tgt_src_aligns
 
