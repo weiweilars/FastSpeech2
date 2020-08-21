@@ -25,10 +25,6 @@ parser.add_argument('-n', action="store", dest='model_name', default="model.pt")
 
 def main(model_path, model_name, log_path):
 
-    torch.manual_seed(0)
-
-    
-
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 

@@ -376,13 +376,13 @@ class TTSLoss(nn.Module):
         mel_linear = mel_linear.transpose(1,2).masked_select(mel_mask.unsqueeze(1))
         mel_post = mel_post.transpose(1,2).masked_select(mel_mask.unsqueeze(1))
 
-        gate_target = gate_target.masked_select(mel_mask)
-        gate_out = gate_out.masked_select(mel_mask)
+        # gate_target = gate_target.masked_select(mel_mask)
+        # gate_out = gate_out.masked_select(mel_mask)
 
         mel_linear_loss = nn.L1Loss()(mel_linear, mel_target)
         mel_post_loss = nn.L1Loss()(mel_post, mel_target)
 
-        gate_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(5.0))(gate_out, gate_target)
+        # gate_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(5.0))(gate_out, gate_target)
 
         # guide_loss = self.guide_loss(alignments[0], mel_len, mel_len)
 
@@ -392,6 +392,8 @@ class TTSLoss(nn.Module):
             guide_loss = self.guide_loss(alignments[2], seq_len, mel_len)
         else:
             guide_loss = torch.tensor(0.0)
+
+        gate_loss = torch.tensor(0.0)
         
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     
