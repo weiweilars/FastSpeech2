@@ -82,8 +82,6 @@ class MultiheadAtten(nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
 
-        self.use_separate_weight = use_separate_weight
-
         self.in_proj_weight = Parameter(torch.empty(3 * embed_dim, embed_dim))
 
         self.out_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
