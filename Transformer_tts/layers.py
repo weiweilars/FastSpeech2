@@ -82,9 +82,7 @@ class MultiheadAtten(nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
 
-        self.use_separate_weight = use_separate_weight
-
-        self.in_proj_weight = Parameter(torch.empty(3 * embed_dim, embed_dim))
+        self.in_proj_weight = nn.Parameter(torch.empty(3 * embed_dim, embed_dim))
 
         self.out_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
         self.out_proj_bias = nn.Parameter(torch.empty(embed_dim))
@@ -114,20 +112,24 @@ class MultiheadAtten(nn.Module):
         scaling = float(self.head_dim) ** -0.5
 
         if torch.equal(query, key) and torch.equal(key, value):
-            q, k, v = F.linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
+            q, k, v = F.linear(query, self.in_proj_weight, self.in_proj_bias).chunk(3, dim=-1)
 
         elif torch.equal(key, value):
-            _b = in_proj_bias
+            _b = self.in_proj_bias
             _start = 0
             _end = self.embed_dim
-            _w = in_proj_weight[_start:_end, :]
+            _w = self.in_proj_weight[_start:_end, :]
             if _b is not None:
-                _b_1 = _b[_start:_end, :]
+                _b_1 = _b[_start:_end]
+            else:
+                _b_1 = None
             q = F.linear(query, _w, _b_1)
 
-            _w = in_proj_weight[_end:,:]
+            _w = self.in_proj_weight[_end:, :]
             if _b is not None:
-                _b_2 = _b[_start:]
+                _b_2 = _b[_end:]
+            else:
+                _b_2 = None
             k, v = F.linear(key, _w, _b_2).chunk(2, dim=-1)
 
         q = q * scaling
@@ -183,8 +185,8 @@ class TransformerEncoderLayer(nn.Module):
                  activation="relu"):
 
         super(TransformerEncoderLayer, self).__init__()
-        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        # self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        # self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
         self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
         self.ff_linear2 = Linear(pf_dim, hid_dim)
 
@@ -205,10 +207,10 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, hid_dim, n_heads, pf_dim=2048, dropout=0.1, activation="relu"):
         super(TransformerDecoderLayer, self).__init__()
-        self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        self.cross_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
-        # self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
-        # self.cross_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        # self.self_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        # self.cross_attn = nn.MultiheadAttention(hid_dim, n_heads, dropout=dropout)
+        self.self_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
+        self.cross_attn = MultiheadAtten(hid_dim, n_heads, dropout=dropout)
 
         self.ff_linear1 = Linear(hid_dim, pf_dim, w_init_gain=activation)
         self.ff_linear2 = Linear(pf_dim, hid_dim)
