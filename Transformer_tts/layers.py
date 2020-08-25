@@ -69,6 +69,7 @@ class PosEmbeddingLayer(nn.Module):
 
         return pe
 
+
 class MultiheadAtten(nn.Module):
     def __init__(self, embed_dim, num_heads, dropout=0.1, bias=True):
         super(MultiheadAtten, self).__init__()
@@ -81,30 +82,30 @@ class MultiheadAtten(nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
 
-        self.q_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
-        self.k_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
-        self.v_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
+        self.use_separate_weight = use_separate_weight
+
+        self.in_proj_weight = Parameter(torch.empty(3 * embed_dim, embed_dim))
+
         self.out_proj_weight = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
+        self.out_proj_bias = nn.Parameter(torch.empty(embed_dim))
 
         if bias:
             self.in_proj_bias = nn.Parameter(torch.empty(3 * embed_dim))
         else:
             self.register_parameter('in_proj_bias', None)
 
-        self.out_proj_bias = nn.Parameter(torch.empty(embed_dim))
-
+        
         self._reset_parameters()
 
     def _reset_parameters(self):
-        
-        nn.init.xavier_uniform_(self.q_proj_weight)
-        nn.init.xavier_uniform_(self.k_proj_weight)
-        nn.init.xavier_uniform_(self.v_proj_weight)
+
+        nn.init.xavier_uniform_(self.in_proj_weight)
+            
         nn.init.kaiming_uniform_(self.out_proj_weight, a=sqrt(5)) # better than xavier_uniform_
         
         if self.in_proj_bias is not None:
             nn.init.constant_(self.in_proj_bias,0.)
-        nn.init.constant_(self.out_proj_bias,0.)
+            nn.init.constant_(self.out_proj_bias,0.)
 
     def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
             
@@ -112,14 +113,22 @@ class MultiheadAtten(nn.Module):
             
         scaling = float(self.head_dim) ** -0.5
 
-        if self.in_proj_bias is not None:
-            q = F.linear(query, self.q_proj_weight, self.in_proj_bias[0:self.embed_dim])
-            k = F.linear(key, self.k_proj_weight, self.in_proj_bias[self.embed_dim:(self.embed_dim * 2)])
-            v = F.linear(value, self.v_proj_weight, self.in_proj_bias[(self.embed_dim * 2):])
-        else:
-            q = F.linear(query, self.q_proj_weight, self.in_proj_bias)
-            k = F.linear(key, self.k_proj_weight, self.in_proj_bias)
-            v = F.linear(value, self.v_proj_weight, self.in_proj_bias)
+        if torch.equal(query, key) and torch.equal(key, value):
+            q, k, v = F.linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
+
+        elif torch.equal(key, value):
+            _b = in_proj_bias
+            _start = 0
+            _end = self.embed_dim
+            _w = in_proj_weight[_start:_end, :]
+            if _b is not None:
+                _b_1 = _b[_start:_end, :]
+            q = F.linear(query, _w, _b_1)
+
+            _w = in_proj_weight[_end:,:]
+            if _b is not None:
+                _b_2 = _b[_start:]
+            k, v = F.linear(key, _w, _b_2).chunk(2, dim=-1)
 
         q = q * scaling
 
