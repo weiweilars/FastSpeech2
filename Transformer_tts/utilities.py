@@ -28,11 +28,10 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
 
         mel_linear, mel_out, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask = model(mel, seq, mel_len, seq_len, gate)
 
-        mel_linear_loss, mel_post_loss, gate_loss, guide_loss = criteriate((mel_linear, mel_out, gate_out),
-                                                                           (mel, gate, mel_key_mask, mel_len, seq_len),
-                                                                           (mel_align, seq_align, mel_seq_align))
+        mel_linear_loss, mel_post_loss, gate_loss, _ = criteriate((mel_linear, mel_out, gate_out),
+                                                                           (mel, gate, mel_key_mask, mel_len, seq_len))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss+guide_loss)/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+gate_loss)/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:
@@ -42,15 +41,14 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
             optimizer.zero_grad()
             losses = {"mel_linear_loss":mel_linear_loss.item(),
                       "mel_post_loss":mel_post_loss.item(),
-                      "gate_loss":gate_loss.item(),
-                      "guide_loss":guide_loss.item()}
+                      "gate_loss":gate_loss.item()}
             writer.add_losses(losses, iteration//params['accumulation'], 'Train')
             
             
         if batch_idx % (50*params['accumulation']) == 0 or batch_idx == data_len:
-            print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f}\tGate Loss: {:.6f}\tGuide Loss: {:.6f}'.format(
+            print('Train Iteration: {} [{}/{} ({:.0f}%)]\tMel_linear Loss: {:.6f}\tMel_post Loss: {:.6f} \tGate Loss: {:.6f}'.format(
                 iteration, batch_idx * len(mel), data_len,
-                100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item(), guide_loss.item()))
+                100. * batch_idx / len(train_loader), mel_linear_loss.item(), mel_post_loss.item(), gate_loss.item()))
             for param_group in optimizer.param_groups:
                 print(param_group['lr'])
 
@@ -71,21 +69,18 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
             mel, seq, gate, mel_len, seq_len = mel.to(device), seq.to(device), gate.to(device), mel_len.to(device), seq_len.to(device)
             mel_linear, mel_post, gate_out, seq_align, mel_align, mel_seq_align, mel_key_mask = model(mel, seq, mel_len, seq_len, gate)
 
-            mel_linear_loss, mel_post_loss, gate_loss, guide_loss = criteriate((mel_linear, mel_post, gate_out),
-                                                                               (mel, gate, mel_key_mask, mel_len, seq_len),
-                                                                               (mel_align, seq_align, mel_seq_align))
+            mel_linear_loss, mel_post_loss, gate_loss, _ = criteriate((mel_linear, mel_post, gate_out),
+                                                                               (mel, gate, mel_key_mask, mel_len, seq_len))
             mel_linear_avg += mel_linear_loss.item()
             mel_post_avg += mel_post_loss.item()
             gate_avg += gate_loss.item()
-            guide_avg += guide_loss.item()
 
 
         print('Test set: Average mel linear loss: {:.6f}'.format(mel_linear_avg/(i+1)))
         print('Test set: Average mel post loss: {:.6f}'.format(mel_post_avg/(i+1)))
         print('Test set: Average gate loss: {:.6f}'.format(gate_avg/(i+1)))
-        print('Test set: Average guide loss: {:.6f}'.format(guide_avg/(i+1)))
 
-        total_loss = (mel_linear_avg + mel_post_avg + gate_avg + guide_avg)/(i+1)
+        total_loss = (mel_linear_avg + mel_post_avg + gate_avg)/(i+1)
 
         print('Test set: Average Total loss: {:.4f}'.format(total_loss))
 
@@ -105,8 +100,7 @@ def validate(model, criteriate, device, val_loader, iteration, writer, params):
 
     losses = {"mel_linear_loss":mel_linear_loss.item(),
               "mel_post_loss":mel_post_loss.item(),
-              "gate_loss":gate_loss.item(),
-              "guide_loss":guide_loss.item()}
+              "gate_loss":gate_loss.item()}
     writer.add_losses(losses,iteration//params['accumulation'], 'Validation')
 
     losses = {"mel_linear_loss":mel_linear_loss_inf.item(),

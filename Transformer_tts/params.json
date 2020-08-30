@@ -41,7 +41,7 @@
     },
     "encoder":
     {
-	"num_layers":6,
+	"num_layers":3,
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
@@ -50,7 +50,7 @@
     },
     "decoder":
     {
-	"num_layers":6,
+	"num_layers":3,
 	"hid_dim":256,
 	"pf_dim":1024,
 	"num_heads":4,
