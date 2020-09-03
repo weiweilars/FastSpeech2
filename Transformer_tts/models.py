@@ -386,7 +386,10 @@ class TTSLoss(nn.Module):
 
         # guide_loss = self.guide_loss(alignments[0], mel_len, mel_len)
 
-        guide_loss = self.guide_loss(alignments[1], seq_len, seq_len)
+        if alignments is not None:
+            guide_loss = self.guide_loss(alignments[1], seq_len, seq_len)
+        else:
+            guide_lost = torch.tensor(0.0)
 
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     
