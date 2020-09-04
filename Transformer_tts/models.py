@@ -389,7 +389,7 @@ class TTSLoss(nn.Module):
         if alignments is not None:
             guide_loss = self.guide_loss(alignments[1], seq_len, seq_len)
         else:
-            guide_lost = torch.tensor(0.0)
+            guide_loss = torch.tensor(0.0)
 
         return mel_linear_loss, mel_post_loss, gate_loss, guide_loss
     
@@ -404,7 +404,7 @@ class TTSLoss(nn.Module):
             mel_seq = (torch.arange(1,t+1).to(torch.float32).unsqueeze(-1)/t).to(self.device)
             text_seq = (torch.arange(1,l+1).to(torch.float32).unsqueeze(0)/l).to(self.device)
             x = torch.pow(mel_seq-text_seq, 2)
-            W[i, :t, :l] += (1-torch.exp(-1.25*x)).to(self.device)
+            W[i, :t, :l] += (1-torch.exp(-0.01*x)).to(self.device)
             mask[i, :t, :l] = 1
 
         if len(alignments.shape) == 4:
