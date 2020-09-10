@@ -18,7 +18,7 @@ def adjust_learning_rate(optimizer, step_num, init_lr, warmup_step=10000):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def train(model, criteriate, device, train_loader, optimizer, iteration, params, writer):
+def train(model, criteriate, device, train_loader, optimizer, iteration, params, writer, weight):
     model.train()
     data_len = len(train_loader.dataset)
     for batch_idx, _data in enumerate(train_loader):
@@ -31,7 +31,7 @@ def train(model, criteriate, device, train_loader, optimizer, iteration, params,
         mel_linear_loss, mel_post_loss, gate_loss, _ = criteriate((mel_linear, mel_out, gate_out),
                                                                            (mel, gate, mel_key_mask, mel_len, seq_len))
         
-        total_loss = (mel_linear_loss+mel_post_loss+gate_loss)/params['accumulation']
+        total_loss = (mel_linear_loss+mel_post_loss+weight*gate_loss)/params['accumulation']
         total_loss.backward()
         
         if iteration % params['accumulation'] == 0:

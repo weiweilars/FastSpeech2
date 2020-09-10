@@ -15,11 +15,11 @@
     },
     "train":
     {
-	"batch_size":10,
+	"batch_size":32,
 	"epochs":2000,
 	"lr":0.05,
 	"warmup_step":4000,
-	"grad_clip_thresh":1.0,
+	"grad_clip_thresh":0.8,
 	"accumulation":6
     },
     "encoderPrenet":
@@ -43,7 +43,7 @@
     {
 	"num_layers":3,
 	"hid_dim":256,
-	"pf_dim":1024,
+	"pf_dim":512,
 	"num_heads":4,
 	"dropout":0.1,
 	"num_neighbour_mask":0
@@ -52,7 +52,7 @@
     {
 	"num_layers":3,
 	"hid_dim":256,
-	"pf_dim":1024,
+	"pf_dim":512,
 	"num_heads":4,
 	"dropout":0.1,
 	"num_mel":80,
